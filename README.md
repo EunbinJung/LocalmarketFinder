@@ -1,100 +1,262 @@
-# LocalmarketFinder
-Discover localmarkets near me
+# LocalmarketFinder 📍
 
-This is a new [**React Native**](https://reactnative.dev) project, bootstrapped using [`@react-native-community/cli`](https://github.com/react-native-community/cli).
+A React Native iOS app for discovering local markets near you. Built with React Native 0.82.1, TypeScript, NativeWind (Tailwind CSS), and Google Maps integration.
 
-# Getting Started
+## 🚀 Features
 
-> **Note**: Make sure you have completed the [Set Up Your Environment](https://reactnative.dev/docs/set-up-your-environment) guide before proceeding.
+- **Interactive Map**: View markets on Google Maps with custom markers
+- **Location Search**: Search for markets using Google Places Autocomplete
+- **Market Details**: View market information, opening hours, photos, and ratings
+- **Bottom Sheet UI**: Swipeable bottom sheet with market listings
+- **Real-time Status**: See if markets are open now or when they'll open next
 
-## Step 1: Start Metro
+## 📋 Prerequisites
 
-First, you will need to run **Metro**, the JavaScript build tool for React Native.
+- **Node.js**: >= 20
+- **Xcode**: Latest version (for iOS development)
+- **CocoaPods**: For iOS dependencies
+- **Ruby**: For CocoaPods (comes with macOS)
+- **Google Maps API Key**: Required for maps and places functionality
 
-To start the Metro dev server, run the following command from the root of your React Native project:
+## 🛠️ Tech Stack
 
-```sh
-# Using npm
+- **React Native**: 0.82.1
+- **TypeScript**: 5.8.3
+- **React Navigation**: Bottom tabs + Stack navigation
+- **NativeWind**: Tailwind CSS for React Native
+- **React Native Maps**: Google Maps integration
+- **React Native Reanimated**: For smooth animations
+- **React Native Gesture Handler**: For bottom sheet gestures
+- **Google Places API**: For location search and market data
+
+## 📁 Project Structure
+
+```
+localmarketfinder/
+├── app/                          # Main application code
+│   ├── App.tsx                   # Root component
+│   ├── assets/                   # Static assets
+│   │   └── icons/               # SVG icons
+│   ├── components/               # Reusable components
+│   │   ├── bottomsheet/         # Bottom sheet components
+│   │   ├── header/              # Header components
+│   │   ├── map/                 # Map components
+│   │   └── marketList/          # Market list components
+│   ├── context/                 # React Context providers
+│   │   └── SearchContext.tsx    # Global state management
+│   ├── hook/                    # Custom hooks
+│   │   └── useBottomSheet.tsx   # Bottom sheet hook
+│   ├── navigation/              # Navigation configuration
+│   │   └── Tabs.tsx             # Tab navigator
+│   ├── screens/                 # Screen components
+│   │   ├── MapScreen.tsx
+│   │   ├── SearchScreen.tsx
+│   │   ├── FeedScreen.tsx
+│   │   └── MyScreen.tsx
+│   └── style/                   # Global styles
+│       └── global.css           # Tailwind CSS
+├── ios/                         # iOS native code
+│   ├── localmarketfinder/      # iOS app configuration
+│   │   ├── AppDelegate.swift   # App delegate
+│   │   └── Info.plist          # iOS configuration
+│   ├── Podfile                 # CocoaPods dependencies
+│   └── localmarketfinder.xcworkspace
+├── babel.config.js             # Babel configuration
+├── metro.config.js             # Metro bundler configuration
+├── tailwind.config.js          # Tailwind CSS configuration
+├── tsconfig.json               # TypeScript configuration
+├── package.json                # Node dependencies
+└── .env                        # Environment variables (create this)
+```
+
+## 🔧 Setup Instructions
+
+### 1. Clone and Install Dependencies
+
+```bash
+# Install Node dependencies
+npm install
+
+# Install CocoaPods dependencies
+cd ios
+bundle install
+bundle exec pod install
+cd ..
+```
+
+### 2. Environment Configuration
+
+Create a `.env` file in the root directory:
+
+```env
+GOOGLE_MAPS_API_KEY=your_google_maps_api_key_here
+```
+
+**Important**: Make sure your Google Maps API key has the following APIs enabled:
+- Maps SDK for iOS
+- Places API
+- Geocoding API
+
+### 3. iOS Configuration
+
+The app is configured to use:
+- **Minimum iOS Version**: 17.0
+- **Google Maps**: Enabled via `RCT_MAPS_IOS_USE_GOOGLE_MAPS`
+- **Location Permissions**: Configured in `Info.plist`
+
+### 4. Run the App
+
+```bash
+# Start Metro bundler
 npm start
 
-# OR using Yarn
-yarn start
-```
-
-## Step 2: Build and run your app
-
-With Metro running, open a new terminal window/pane from the root of your React Native project, and use one of the following commands to build and run your Android or iOS app:
-
-### Android
-
-```sh
-# Using npm
-npm run android
-
-# OR using Yarn
-yarn android
-```
-
-### iOS
-
-For iOS, remember to install CocoaPods dependencies (this only needs to be run on first clone or after updating native deps).
-
-The first time you create a new project, run the Ruby bundler to install CocoaPods itself:
-
-```sh
-bundle install
-```
-
-Then, and every time you update your native dependencies, run:
-
-```sh
-bundle exec pod install
-```
-
-For more information, please visit [CocoaPods Getting Started guide](https://guides.cocoapods.org/using/getting-started.html).
-
-```sh
-# Using npm
+# In a new terminal, run iOS app
 npm run ios
-
-# OR using Yarn
-yarn ios
 ```
 
-If everything is set up correctly, you should see your new app running in the Android Emulator, iOS Simulator, or your connected device.
+Or open the workspace in Xcode:
+```bash
+open ios/localmarketfinder.xcworkspace
+```
 
-This is one way to run your app — you can also build it directly from Android Studio or Xcode.
+## 📱 Running on Device
 
-## Step 3: Modify your app
+1. Connect your iOS device via USB
+2. Trust your computer on the device
+3. Open Xcode and select your device
+4. Run the app from Xcode or use:
+   ```bash
+   npm run ios -- --device
+   ```
 
-Now that you have successfully run the app, let's make changes!
+## 🎨 Styling
 
-Open `App.tsx` in your text editor of choice and make some changes. When you save, your app will automatically update and reflect these changes — this is powered by [Fast Refresh](https://reactnative.dev/docs/fast-refresh).
+This project uses **NativeWind** (Tailwind CSS for React Native). 
 
-When you want to forcefully reload, for example to reset the state of your app, you can perform a full reload:
+### Custom Colors
 
-- **Android**: Press the <kbd>R</kbd> key twice or select **"Reload"** from the **Dev Menu**, accessed via <kbd>Ctrl</kbd> + <kbd>M</kbd> (Windows/Linux) or <kbd>Cmd ⌘</kbd> + <kbd>M</kbd> (macOS).
-- **iOS**: Press <kbd>R</kbd> in iOS Simulator.
+Defined in `tailwind.config.js`:
+- `bg`: #F1E7E7
+- `primary`: #E69DB8
+- `secondary`: #FFD0C7
+- `tertiary`: #FFF7F3
 
-## Congratulations! :tada:
+### Usage
 
-You've successfully run and modified your React Native App. :partying_face:
+```tsx
+<View className="bg-primary rounded-lg p-4">
+  <Text className="text-white font-bold">Hello</Text>
+</View>
+```
 
-### Now what?
+## 🔑 Key Configuration Files
 
-- If you want to add this new React Native code to an existing application, check out the [Integration guide](https://reactnative.dev/docs/integration-with-existing-apps).
-- If you're curious to learn more about React Native, check out the [docs](https://reactnative.dev/docs/getting-started).
+### `babel.config.js`
+- React Native preset
+- NativeWind preset
+- React Native Dotenv for environment variables
+- React Native Reanimated plugin
 
-# Troubleshooting
+### `metro.config.js`
+- SVG transformer for importing SVG files as components
+- NativeWind integration
+- Reanimated support
 
-If you're having issues getting the above steps to work, see the [Troubleshooting](https://reactnative.dev/docs/troubleshooting) page.
+### `ios/Podfile`
+- iOS 17.0 minimum
+- Google Maps SDK 7.4.0
+- React Native Maps with Google Maps provider
 
-# Learn More
+### `ios/localmarketfinder/Info.plist`
+- Location permissions
+- App Transport Security settings
+- Bundle configuration
 
-To learn more about React Native, take a look at the following resources:
+## 🧪 Development
 
-- [React Native Website](https://reactnative.dev) - learn more about React Native.
-- [Getting Started](https://reactnative.dev/docs/environment-setup) - an **overview** of React Native and how setup your environment.
-- [Learn the Basics](https://reactnative.dev/docs/getting-started) - a **guided tour** of the React Native **basics**.
-- [Blog](https://reactnative.dev/blog) - read the latest official React Native **Blog** posts.
-- [`@facebook/react-native`](https://github.com/facebook/react-native) - the Open Source; GitHub **repository** for React Native.
+### Hot Reload
+
+The app supports Fast Refresh. Changes will automatically reflect when you save files.
+
+### Manual Reload
+
+- **iOS Simulator**: Press `R` key or `Cmd + R`
+- **Device**: Shake device to open Dev Menu
+
+### Debugging
+
+- **React Native Debugger**: Use Chrome DevTools
+- **Xcode Console**: View native logs
+- **Flipper**: Optional debugging tool
+
+## 📦 Dependencies
+
+### Core
+- `react`: 19.1.1
+- `react-native`: 0.82.1
+- `typescript`: 5.8.3
+
+### Navigation
+- `@react-navigation/native`: ^7.1.18
+- `@react-navigation/bottom-tabs`: ^7.5.0
+- `@react-navigation/native-stack`: ^7.5.1
+
+### Maps & Location
+- `react-native-maps`: ^1.10.3
+- `react-native-google-places-autocomplete`: ^2.5.7
+- `react-native-geolocation-service`: ^5.3.1
+
+### UI & Styling
+- `nativewind`: ^4.2.1
+- `tailwindcss`: ^3.4.18
+- `react-native-svg`: ^15.14.0
+- `react-native-reanimated`: ^4.1.3
+- `react-native-gesture-handler`: ^2.29.0
+
+### Utilities
+- `react-native-dotenv`: ^3.4.11
+- `react-native-safe-area-context`: ^5.6.1
+
+## 🐛 Troubleshooting
+
+### Pod Install Issues
+
+```bash
+cd ios
+rm -rf Pods Podfile.lock
+bundle exec pod install
+cd ..
+```
+
+### Metro Bundler Issues
+
+```bash
+npm start -- --reset-cache
+```
+
+### Build Issues
+
+1. Clean build folder in Xcode: `Product > Clean Build Folder` (Shift + Cmd + K)
+2. Delete derived data
+3. Reinstall pods
+
+### Google Maps Not Showing
+
+1. Verify API key is correct in `.env`
+2. Check API key has Maps SDK for iOS enabled
+3. Verify API key restrictions allow your bundle ID
+
+## 📝 Notes
+
+- This project is **iOS only** - Android support is not included
+- Requires a valid Google Maps API key with billing enabled
+- Location permissions are required for the app to function
+- Minimum iOS version: 17.0
+
+## 📄 License
+
+Private project
+
+## 👤 Author
+
+Built with ❤️ using React Native
