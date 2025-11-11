@@ -10,14 +10,17 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import Tabs from './navigation/Tabs';
 import { NavigationContainer } from '@react-navigation/native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { SearchProvider } from './context/SearchContext';
 
 function App() {
   return (
     <SafeAreaProvider>
       <GestureHandlerRootView className="flex-1" style={{ flex: 1 }}>
-        <NavigationContainer>
-          <Tabs />
-        </NavigationContainer>
+        <SearchProvider>
+          <NavigationContainer>
+            <Tabs />
+          </NavigationContainer>
+        </SearchProvider>
       </GestureHandlerRootView>
     </SafeAreaProvider>
   );

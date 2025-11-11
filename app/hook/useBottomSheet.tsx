@@ -4,15 +4,15 @@ import { useSharedValue, withSpring } from 'react-native-reanimated';
 
 export const { height: screenHeight } = Dimensions.get('screen');
 
-export const MIN_Y = 60; // 바텀시트가 최대로 높이 올라갔을 때의 y 값
+export const MIN_Y = 147; // 바텀시트가 최대로 높이 올라갔을 때의 y 값
 export const MAX_Y = screenHeight - 60; // 바텀시트가 최소로 내려갔을 때의 y 값
 export const BOTTOM_SHEET_HEIGHT = screenHeight - MIN_Y; // 바텀시트의 세로 길이
 
 /** 스냅 포인트 설정 */
 const SNAP_POINTS = {
-  FULL: 60, // 완전 열린 상태
+  FULL: 147, // 완전 열린 상태
   HALF: screenHeight * 0.45, // 중간쯤
-  CLOSED: screenHeight - 140, // 닫힌 상태
+  CLOSED: screenHeight - 150, // 닫힌 상태
 };
 /** 닫히는 기준 거리 */
 const CLOSE_THRESHOLD = 80;

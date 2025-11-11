@@ -1,8 +1,8 @@
-import { Text } from 'react-native';
 import BottomSheetHeader from './BottomSheetHeader';
 import Animated, { useAnimatedStyle } from 'react-native-reanimated';
 import { GestureDetector, ScrollView } from 'react-native-gesture-handler';
 import { screenHeight, useBottomSheet } from '../../hook/useBottomSheet';
+import MarketList from '../marketList/MarketList';
 
 function BottomSheet() {
   const { sheetY, scrollOffset, isContentAreaTouched, gesture } =
@@ -26,22 +26,16 @@ function BottomSheet() {
       >
         <BottomSheetHeader />
         <ScrollView
+          className="bg-white"
           onScroll={e => {
             scrollOffset.value = e.nativeEvent.contentOffset.y;
           }}
           scrollEventThrottle={16}
           onTouchStart={() => (isContentAreaTouched.value = true)}
           onTouchEnd={() => (isContentAreaTouched.value = false)}
-          contentContainerStyle={{ padding: 20 }}
+          style={{ marginBottom: 230 }}
         >
-          <Text style={{ fontWeight: 'bold', fontSize: 16, marginBottom: 10 }}>
-            Market List
-          </Text>
-          {Array.from({ length: 30 }).map((_, i) => (
-            <Text key={i} style={{ paddingVertical: 8 }}>
-              Item {i + 1}
-            </Text>
-          ))}
+          <MarketList />
         </ScrollView>
       </Animated.View>
     </GestureDetector>

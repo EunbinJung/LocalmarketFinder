@@ -5,7 +5,11 @@ require Pod::Executable.execute_command('node', ['-p',
     {paths: [process.argv[1]]},
   )', __dir__]).strip
 
-platform :ios, min_ios_version_supported
+platform :ios, '17.0'
+
+# ✅ react-native-maps에서 Google Maps를 사용하겠다고 명시
+ENV['RCT_MAPS_IOS_USE_GOOGLE_MAPS'] = '1'
+
 prepare_react_native_project!
 
 linkage = ENV['USE_FRAMEWORKS']
@@ -25,6 +29,12 @@ target 'localmarketfinder' do
     :new_arch_enabled => false,
   )
 
+  # ✅ Google Maps
+  rn_maps_path = '../node_modules/react-native-maps'
+  pod 'GoogleMaps', '7.4.0'
+  pod 'react-native-maps', :path => rn_maps_path
+  pod 'react-native-google-maps', :path => rn_maps_path
+
   post_install do |installer|
     react_native_post_install(
       installer,
@@ -32,5 +42,6 @@ target 'localmarketfinder' do
       :mac_catalyst_enabled => false,
       # :ccache_enabled => true
     )
+
   end
 end
