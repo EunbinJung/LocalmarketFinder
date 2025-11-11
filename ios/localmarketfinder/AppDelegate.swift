@@ -3,6 +3,7 @@ import React
 import React_RCTAppDelegate
 import ReactAppDependencyProvider
 import GoogleMaps
+import RNCConfig.h
 
 @main
 class AppDelegate: UIResponder, UIApplicationDelegate {
@@ -15,9 +16,10 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
   ) -> Bool {
-    let apiKey = "AIzaSyADbN74rpghhWd0e1y50gyBYIw9DPY-veg"
+    NSString *mapsApiKey = [RNCConfig envFor:@"GOOGLE_MAPS_API_KEY"];
+  [GMSServices provideAPIKey: mapsApiKey];
     GMSServices.provideAPIKey(apiKey)
-    print("🗺️ Google Maps API Key 설정 완료: \(apiKey)")
+    print("Google Maps API Key 설정 완료")
 
     let delegate = ReactNativeDelegate()
     let factory = RCTReactNativeFactory(delegate: delegate)

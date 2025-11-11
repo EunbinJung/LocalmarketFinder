@@ -30,7 +30,7 @@ export const calculateNextOpenDay = (periods: Period[] | undefined) => {
     const checkDay = (currentDay + i) % 7;
     const period = periods.find(p => p.open.day === checkDay);
 
-    if (!period) continue;
+    if (!period || !period.open?.time || !period.close?.time) continue;
 
     const openMins = toMinutes(period.open.time);
     const closeMins = toMinutes(period.close.time);

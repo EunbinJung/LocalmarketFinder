@@ -41,7 +41,7 @@ function MarketFilter() {
         const soonMarkets = markets
           .map(market => {
             const next = calculateNextOpenDay(
-              market.details?.opening_hours?.weekday_text,
+              market.details?.opening_hours?.periods,
             );
             return { ...market, next };
           })
@@ -55,10 +55,10 @@ function MarketFilter() {
       label: 'Open Now',
       value: 'open-now',
       onPress: () => {
-        const openNow = markets.filter(
-          market => market.opening_hours?.open_now === true,
-        );
-        setFilteredMarkets(openNow);
+        // const openNow = markets.filter(
+        //   market => market.opening_hours?.open_now === true,
+        // );
+        // setFilteredMarkets(openNow);
       },
     },
   ];

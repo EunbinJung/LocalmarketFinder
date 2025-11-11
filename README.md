@@ -258,5 +258,5 @@ npm start -- --reset-cache
 Private project
 
 ## 👤 Author
-
+Eunbin Jung
 Built with ❤️ using React Native
