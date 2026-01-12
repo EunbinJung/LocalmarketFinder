@@ -1,5 +1,5 @@
 import { Image, Text, TouchableOpacity, View } from 'react-native';
-import { Market } from '../../../context/SearchContext';
+import { Market, useSearch } from '../../../context/SearchContext';
 import { calculateNextOpenDay } from './utils/calculateNextOpenDay';
 import { GOOGLE_MAPS_API_KEY } from '@env';
 
@@ -18,10 +18,13 @@ function MarketCard({ market }: MarketCardProps) {
     ? `https://maps.googleapis.com/maps/api/place/photo?maxwidth=400&photo_reference=${market.photos[0].photo_reference}&key=${GOOGLE_MAPS_API_KEY}`
     : null;
 
+  const { setSelectedMarket } = useSearch();
+
   return (
     <TouchableOpacity
       activeOpacity={0.9}
       className="bg-white px-5 py-4 border-b-8 border-gray-100"
+      onPress={() => setSelectedMarket(market)}
     >
       {/* Header: Name + Status */}
       <View className="flex-1 pr-2">

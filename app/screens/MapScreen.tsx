@@ -2,6 +2,7 @@ import { View } from 'react-native';
 import Header from '../components/header/Header';
 import BottomSheet from '../components/bottomsheet/BottomSheet';
 import MapContent from '../components/map/MapContent';
+import MarketDetailModal from '../components/marketDetail/MarketDetailModal';
 
 function MapScreen() {
   return (
@@ -9,6 +10,7 @@ function MapScreen() {
       <Header />
       <MapContent />
       <BottomSheet />
+      <MarketDetailModal />
     </View>
   );
 }

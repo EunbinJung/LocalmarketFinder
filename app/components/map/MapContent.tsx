@@ -2,9 +2,7 @@ import { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, StyleSheet, View } from 'react-native';
 import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
 import Geolocation from 'react-native-geolocation-service';
-import { useNearbyMarkets } from './utils/fetchNearbyMarkets';
 import { useSearch } from '../../context/SearchContext';
-import MarkerIcon from '../../assets/icons/marker.svg';
 import CurrentLocationIcon from '../../assets/icons/myMarker.svg';
 
 interface Region {
@@ -16,12 +14,12 @@ interface Region {
 
 function MapContent() {
   const [region, setRegion] = useState<Region | null>(null);
-  const { markets, fetchNearbyMarkets, loading } = useNearbyMarkets();
   const { selectedLocation } = useSearch();
 
   // ✅ 1️⃣ 초기 위치 가져오기 (최초 마운트 시에만, selectedLocation이 없을 때만)
   useEffect(() => {
-    if (selectedLocation || region) return; // 검색된 위치나 region이 이미 있으면 초기 위치 가져오지 않음
+    // region이 이미 있으면 초기 위치 가져오지 않음
+    if (region) return;
 
     const getLocation = async () => {
       Geolocation.getCurrentPosition(
@@ -30,12 +28,11 @@ function MapContent() {
           const initialRegion = {
             latitude,
             longitude,
-            latitudeDelta: 0.01,
-            longitudeDelta: 0.01,
+            latitudeDelta: 0.05,
+            longitudeDelta: 0.05,
           };
           //내 위치를 기준으로 주변 마켓 검색
           setRegion(initialRegion);
-          fetchNearbyMarkets(latitude, longitude);
         },
         error => {
           console.log('❌ 위치 접근 거절 또는 오류:', error);
@@ -51,7 +48,6 @@ function MapContent() {
             longitudeDelta: 0.05,
           };
           setRegion(randomRegion);
-          fetchNearbyMarkets(randomRegion.latitude, randomRegion.longitude);
         },
         { enableHighAccuracy: true, timeout: 15000, maximumAge: 10000 },
       );
@@ -71,15 +67,10 @@ function MapContent() {
         longitudeDelta: 0.05,
       };
       setRegion(newRegion);
-      fetchNearbyMarkets(lat, lng);
     }
-  }, [selectedLocation, fetchNearbyMarkets]);
+  }, [selectedLocation]);
 
-  useEffect(() => {
-    console.log('markets', markets);
-  }, [markets]);
-
-  if (loading || !region)
+  if (!region)
     return (
       <View className="flex-1 items-center justify-center bg-tertiary">
         <ActivityIndicator size="large" color="#FF8A65" />
@@ -99,7 +90,7 @@ function MapContent() {
           <CurrentLocationIcon width={45} height={45} />
         </Marker>
         {/* 주변 마켓 마커 */}
-        {markets.map(market => (
+        {/* {markets.map(market => (
           <Marker
             key={market.place_id}
             coordinate={{
@@ -110,7 +101,7 @@ function MapContent() {
           >
             <MarkerIcon width={40} height={40} />
           </Marker>
-        ))}
+        ))} */}
       </MapView>
     </View>
   );

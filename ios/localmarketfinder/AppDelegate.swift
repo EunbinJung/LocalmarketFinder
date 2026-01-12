@@ -3,7 +3,6 @@ import React
 import React_RCTAppDelegate
 import ReactAppDependencyProvider
 import GoogleMaps
-import RNCConfig.h
 
 @main
 class AppDelegate: UIResponder, UIApplicationDelegate {
@@ -16,10 +15,14 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
   ) -> Bool {
-    NSString *mapsApiKey = [RNCConfig envFor:@"GOOGLE_MAPS_API_KEY"];
-  [GMSServices provideAPIKey: mapsApiKey];
-    GMSServices.provideAPIKey(apiKey)
-    print("Google Maps API Key 설정 완료")
+    // Google Maps API Key 설정 (react-native-config에서 가져오기)
+    // 브릿징 헤더를 통해 RNCConfig 사용
+    if let apiKey = RNCConfig.env(for: "GOOGLE_MAPS_API_KEY") {
+      GMSServices.provideAPIKey(apiKey)
+      print("🗺️ Google Maps API Key 설정 완료")
+    } else {
+      print("⚠️ 경고: GOOGLE_MAPS_API_KEY를 찾을 수 없습니다. .env 파일을 확인하세요.")
+    }
 
     let delegate = ReactNativeDelegate()
     let factory = RCTReactNativeFactory(delegate: delegate)

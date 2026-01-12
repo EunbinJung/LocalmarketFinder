@@ -1,40 +1,18 @@
 import { createContext, useContext, useState, ReactNode } from 'react';
 
-export interface MarketDetails {
-  formatted_address?: string;
-  formatted_phone_number?: string;
-  website?: string;
-  opening_hours?: {
-    open_now?: boolean;
-    weekday_text?: string[];
-    periods?: Array<{
-      open: { day: number; time: string };
-      close: { day: number; time: string };
-    }>;
-  };
-}
-
 export interface Market {
   place_id: string;
   name: string;
-  rating?: number;
-  user_ratings_total?: number;
-  opening_hours?: {
-    open_now?: boolean;
-  }[];
-  photos?: {
-    photo_reference: string;
-    html_attributions: string[];
-  }[];
   geometry: {
-    location: {
-      lat: number;
-      lng: number;
-    };
+    location: { lat: number; lng: number };
   };
   types: string[];
   business_status?: 'OPERATIONAL' | 'CLOSED_TEMPORARILY' | 'CLOSED_PERMANENTLY';
-  details?: MarketDetails;
+  opening_hours?: {
+    open_now?: boolean;
+    weekday_text?: string[];
+  };
+  // details, photos, rating 제거 → 과금 방지
 }
 
 interface SearchContextType {
@@ -48,6 +26,8 @@ interface SearchContextType {
   setMarkets: (markets: Market[]) => void;
   loading: boolean;
   setLoading: (loading: boolean) => void;
+  selectedMarket: Market | null;
+  setSelectedMarket: (market: Market | null) => void;
 }
 
 const SearchContext = createContext<SearchContextType | undefined>(undefined);
@@ -61,6 +41,7 @@ export function SearchProvider({ children }: { children: ReactNode }) {
   const [markets, setMarkets] = useState<Market[]>([]);
   const [loading, setLoading] = useState(false);
   const [filteredMarkets, setFilteredMarkets] = useState<Market[]>([]);
+  const [selectedMarket, setSelectedMarket] = useState<Market | null>(null);
 
   return (
     <SearchContext.Provider
@@ -75,6 +56,8 @@ export function SearchProvider({ children }: { children: ReactNode }) {
         setMarkets,
         loading,
         setLoading,
+        selectedMarket,
+        setSelectedMarket,
       }}
     >
       {children}
