@@ -44,8 +44,8 @@ function MapContent() {
           const randomRegion = {
             latitude: -33.8688,
             longitude: 151.2093,
-            latitudeDelta: 0.05,
-            longitudeDelta: 0.05,
+            latitudeDelta: 0.01,
+            longitudeDelta: 0.01,
           };
           setRegion(randomRegion);
         },
@@ -63,8 +63,8 @@ function MapContent() {
       const newRegion = {
         latitude: lat,
         longitude: lng,
-        latitudeDelta: 0.05,
-        longitudeDelta: 0.05,
+        latitudeDelta: 0.01,
+        longitudeDelta: 0.01,
       };
       setRegion(newRegion);
     }
@@ -84,6 +84,11 @@ function MapContent() {
         region={region}
         style={{ flex: 1 }}
         showsUserLocation={true}
+        zoomEnabled={true}
+        zoomControlEnabled={false}
+        scrollEnabled={true}
+        pitchEnabled={true}
+        rotateEnabled={true}
       >
         {/* 내 위치마커 */}
         <Marker coordinate={region} title="현재 위치">
