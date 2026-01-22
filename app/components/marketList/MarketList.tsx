@@ -20,19 +20,28 @@ function MarketList() {
     return (
       <View className="flex gap-4 w-full mb-30">
         <MarketFilter />
-        <Text className="text-center text-gray-500 mt-10">
-          No markets found nearby.
+        <View className="flex-1 items-center justify-center mt-20">
+          <Text className="text-center text-gray-500 text-lg">
+            {filteredMarkets.length === 0 && markets.length > 0
+              ? 'No markets match your filter.'
+              : 'No markets found nearby.'}
         </Text>
+        </View>
       </View>
     );
   }
 
   return (
-    <View className="flex gap-4 w-full mb-30 overflow-x-scroll scrollbar-hide">
+    <View className="flex gap-4 w-full mb-30">
       <MarketFilter />
-      {list.map(market => (
-        <MarketCard key={market.place_id} market={market} />
-      ))}
+      {list.map((market) => {
+        try {
+          return <MarketCard key={market.place_id} market={market} />;
+        } catch (error) {
+          console.error('Error rendering market:', error);
+          return null;
+        }
+      })}
     </View>
   );
 }

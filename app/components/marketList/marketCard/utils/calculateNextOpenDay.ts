@@ -1,6 +1,6 @@
 interface Period {
   open: { day: number; time: string };
-  close: { day: number; time: string };
+  close?: { day: number; time: string };
 }
 
 /**

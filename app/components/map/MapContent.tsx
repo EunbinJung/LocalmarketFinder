@@ -4,6 +4,7 @@ import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
 import Geolocation from 'react-native-geolocation-service';
 import { useSearch } from '../../context/SearchContext';
 import CurrentLocationIcon from '../../assets/icons/myMarker.svg';
+import MarkerIcon from '../../assets/icons/marker.svg'; 
 
 interface Region {
   latitude: number;
@@ -14,7 +15,7 @@ interface Region {
 
 function MapContent() {
   const [region, setRegion] = useState<Region | null>(null);
-  const { selectedLocation } = useSearch();
+  const { selectedLocation, filteredMarkets, setMapCenter } = useSearch();
 
   // ✅ 1️⃣ 초기 위치 가져오기 (최초 마운트 시에만, selectedLocation이 없을 때만)
   useEffect(() => {
@@ -31,16 +32,15 @@ function MapContent() {
             latitudeDelta: 0.05,
             longitudeDelta: 0.05,
           };
-          //내 위치를 기준으로 주변 마켓 검색
           setRegion(initialRegion);
+          setMapCenter({ lat: latitude, lng: longitude });
         },
         error => {
-          console.log('❌ 위치 접근 거절 또는 오류:', error);
           Alert.alert(
             'Location Permission',
             'Location access denied. Showing a random area instead.',
           );
-          // ❌ 권한 거절 시 시드니로 대체
+          // Fallback to Sydney if location access denied
           const randomRegion = {
             latitude: -33.8688,
             longitude: 151.2093,
@@ -48,15 +48,16 @@ function MapContent() {
             longitudeDelta: 0.01,
           };
           setRegion(randomRegion);
+          setMapCenter({ lat: -33.8688, lng: 151.2093 });
         },
         { enableHighAccuracy: true, timeout: 15000, maximumAge: 10000 },
       );
     };
     getLocation();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // 최초 마운트 시에만 실행
+  }, []);
 
-  // ✅ 2️⃣ 검색창에서 새로운 위치 선택 시 지도 갱신
+  // Update map when selected location changes
   useEffect(() => {
     if (selectedLocation) {
       const { lat, lng } = selectedLocation;
@@ -67,8 +68,9 @@ function MapContent() {
         longitudeDelta: 0.01,
       };
       setRegion(newRegion);
+      setMapCenter({ lat, lng });
     }
-  }, [selectedLocation]);
+  }, [selectedLocation, setMapCenter]);
 
   if (!region)
     return (
@@ -89,24 +91,25 @@ function MapContent() {
         scrollEnabled={true}
         pitchEnabled={true}
         rotateEnabled={true}
+        onRegionChangeComplete={(newRegion) => {
+          setMapCenter({ lat: newRegion.latitude, lng: newRegion.longitude });
+        }}
       >
-        {/* 내 위치마커 */}
         <Marker coordinate={region} title="현재 위치">
           <CurrentLocationIcon width={45} height={45} />
         </Marker>
-        {/* 주변 마켓 마커 */}
-        {/* {markets.map(market => (
+        {filteredMarkets.map(market => (
           <Marker
             key={market.place_id}
             coordinate={{
-              latitude: market.geometry.location.lat,
-              longitude: market.geometry.location.lng,
+              latitude: market.geometry?.location.lat || 0,
+              longitude: market.geometry?.location.lng || 0,
             }}
             title={market.name}
           >
             <MarkerIcon width={40} height={40} />
           </Marker>
-        ))} */}
+        ))}
       </MapView>
     </View>
   );

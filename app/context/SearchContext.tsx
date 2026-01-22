@@ -1,18 +1,30 @@
-import { createContext, useContext, useState, ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { getAllMarkets } from '../services/marketService';
+import { getSavedMarkets } from '../services/savedMarketService';
 
 export interface Market {
   place_id: string;
   name: string;
-  geometry: {
+  geometry?: {
     location: { lat: number; lng: number };
   };
-  types: string[];
+  types?: string[];
   business_status?: 'OPERATIONAL' | 'CLOSED_TEMPORARILY' | 'CLOSED_PERMANENTLY';
+  // Optional fields (may not be loaded initially to save costs)
+  rating?: number;
+  user_ratings_total?: number;
+  website?: string;
+  // Support both formats: photos array (Google Places API) and photo_reference string (Firestore)
+  photo_reference?: string; // Direct photo_reference field from Firestore
+    formatted_address?: string;
   opening_hours?: {
-    open_now?: boolean;
+      periods?: Array<{
+        open: { day: number; time: string };
+        close?: { day: number; time: string };
+      }>;
     weekday_text?: string[];
   };
-  // details, photos, rating 제거 → 과금 방지
+  
 }
 
 interface SearchContextType {
@@ -20,6 +32,8 @@ interface SearchContextType {
   setIsSearch: (value: boolean) => void;
   selectedLocation: { lat: number; lng: number } | null;
   setSelectedLocation: (location: { lat: number; lng: number } | null) => void;
+  mapCenter: { lat: number; lng: number } | null;
+  setMapCenter: (center: { lat: number; lng: number } | null) => void;
   setFilteredMarkets: (filteredMarkets: Market[]) => void;
   filteredMarkets: Market[];
   markets: Market[];
@@ -28,6 +42,9 @@ interface SearchContextType {
   setLoading: (loading: boolean) => void;
   selectedMarket: Market | null;
   setSelectedMarket: (market: Market | null) => void;
+  savedMarketIds: string[];
+  setSavedMarketIds: (ids: string[]) => void;
+  refreshSavedMarkets: () => Promise<void>;
 }
 
 const SearchContext = createContext<SearchContextType | undefined>(undefined);
@@ -38,10 +55,71 @@ export function SearchProvider({ children }: { children: ReactNode }) {
     lat: number;
     lng: number;
   } | null>(null);
+  const [mapCenter, setMapCenter] = useState<{
+    lat: number;
+    lng: number;
+  } | null>(null);
   const [markets, setMarkets] = useState<Market[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [filteredMarkets, setFilteredMarkets] = useState<Market[]>([]);
+  const [loading, setLoading] = useState(true); // Start with loading true
+  const [filteredMarkets, setFilteredMarketsState] = useState<Market[]>([]);
+  
+  const setFilteredMarkets = (newMarkets: Market[]) => {
+    try {
+      if (!Array.isArray(newMarkets)) {
+        setFilteredMarketsState([]);
+        return;
+      }
+      
+      // Filter out invalid markets (missing name or place_id)
+      const validMarkets = newMarkets.filter((m) => {
+        return m && m.place_id && m.name;
+      });
+      
+      setFilteredMarketsState(validMarkets);
+    } catch (error) {
+      console.error('Error setting filtered markets:', error);
+      setFilteredMarketsState([]);
+    }
+  };
+  
   const [selectedMarket, setSelectedMarket] = useState<Market | null>(null);
+  const [savedMarketIds, setSavedMarketIds] = useState<string[]>([]);
+
+  // Load saved markets
+  const refreshSavedMarkets = async () => {
+    try {
+      const savedIds = await getSavedMarkets();
+      setSavedMarketIds(savedIds);
+    } catch (error) {
+      console.error('Error loading saved markets:', error);
+    }
+  };
+
+  // Load markets from Firestore on mount
+  useEffect(() => {
+    const loadMarkets = async () => {
+      try {
+        setLoading(true);
+      
+        
+        // Load markets and saved markets in parallel
+        const [loadedMarkets, savedIds] = await Promise.all([
+          getAllMarkets(),
+          getSavedMarkets(),
+        ]);
+        
+        setMarkets(loadedMarkets);
+        setFilteredMarkets(loadedMarkets);
+        setSavedMarketIds(savedIds);
+      } catch (error) {
+        console.error('Error loading data:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadMarkets();
+  }, []);
 
   return (
     <SearchContext.Provider
@@ -50,6 +128,8 @@ export function SearchProvider({ children }: { children: ReactNode }) {
         setIsSearch,
         selectedLocation,
         setSelectedLocation,
+        mapCenter,
+        setMapCenter,
         setFilteredMarkets,
         filteredMarkets,
         markets,
@@ -58,6 +138,9 @@ export function SearchProvider({ children }: { children: ReactNode }) {
         setLoading,
         selectedMarket,
         setSelectedMarket,
+        savedMarketIds,
+        setSavedMarketIds,
+        refreshSavedMarkets,
       }}
     >
       {children}

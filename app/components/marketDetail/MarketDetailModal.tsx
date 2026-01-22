@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import {
   Modal,
   View,
@@ -8,152 +8,166 @@ import {
   Image,
   TextInput,
   ActivityIndicator,
-  Linking,
   KeyboardAvoidingView,
   Platform,
+  FlatList,
+  Alert,
+  Animated,
+  Linking,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useSearch } from '../../context/SearchContext';
 import {
   getMarketDetails,
-  saveMarketDetails,
-  addMarketComment,
   getMarketComments,
-  MarketDetailData,
+  addMarketComment,
+  deleteMarketComment,
   Comment,
 } from '../../services/marketDetailsService';
-import { GOOGLE_MAPS_API_KEY } from '@env';
-import { calculateNextOpenDay } from '../marketList/marketCard/utils/calculateNextOpenDay';
+import { getPhotoUrl } from '../../utils/photoUtils';
+import { getWeeklySchedule } from '../../utils/weeklySchedule';
+import ReactionField from './ReactionField';
+import { auth } from '../../services/firebase';
+import { isMarketSaved, toggleSaveMarket } from '../../services/savedMarketService';
 
-// Helper function to format Firebase Timestamp
-const formatTimestamp = (timestamp: any): string => {
-  if (!timestamp) return 'Recently';
-  try {
-    if (timestamp.toDate) {
-      return timestamp.toDate().toLocaleDateString();
-    }
-    if (timestamp.seconds) {
-      return new Date(timestamp.seconds * 1000).toLocaleDateString();
-    }
-    if (timestamp instanceof Date) {
-      return timestamp.toLocaleDateString();
-    }
-    return 'Recently';
-  } catch {
-    return 'Recently';
-  }
-};
-
-interface FieldSectionProps {
-  title: string;
-  value: string | React.ReactNode;
-  fieldName?: string;
-  placeId: string;
-  onCommentAdd: (field: string, comment: string) => void;
-  comments: Comment[];
-}
-
-function FieldSection({
-  title,
-  value,
-  fieldName,
-  placeId,
-  onCommentAdd,
-  comments,
-}: FieldSectionProps) {
-  const [showCommentInput, setShowCommentInput] = useState(false);
+// Comment Input Component
+const CommentInputComponent = ({
+  onSubmit,
+  onCancel,
+  loading,
+}: {
+  onSubmit: (text: string) => void;
+  onCancel: () => void;
+  loading: boolean;
+}) => {
   const [commentText, setCommentText] = useState('');
 
-  const fieldComments = comments.filter(c => c.field === fieldName);
-
-  const handleSubmitComment = () => {
+  const handleSubmit = () => {
     if (commentText.trim()) {
-      onCommentAdd(fieldName || 'general', commentText);
+      onSubmit(commentText.trim());
       setCommentText('');
-      setShowCommentInput(false);
     }
   };
 
   return (
-    <View className="mb-4 pb-4 border-b border-gray-200">
-      <View className="flex-row justify-between items-start mb-2">
-        <Text className="text-lg font-semibold text-gray-800">{title}</Text>
+    <View className="p-4 bg-gray-50 border-t border-gray-200">
+      <TextInput
+        value={commentText}
+        onChangeText={setCommentText}
+        placeholder="Write an anonymous comment..."
+        multiline
+        className="bg-white border border-gray-300 rounded-lg p-3 text-gray-700 min-h-[80px] mb-3"
+        editable={!loading}
+      />
+      <View className="flex-row gap-2">
         <TouchableOpacity
-          onPress={() => setShowCommentInput(!showCommentInput)}
-          className="px-3 py-1 bg-primary rounded-full"
+          onPress={handleSubmit}
+          disabled={loading || !commentText.trim()}
+          className="flex-1 bg-primary py-3 rounded-lg"
         >
-          <Text className="text-white text-xs">💬</Text>
+          {loading ? (
+            <ActivityIndicator color="white" />
+          ) : (
+            <Text className="text-white text-center font-semibold">
+              Submit
+            </Text>
+          )}
+        </TouchableOpacity>
+        <TouchableOpacity
+          onPress={() => {
+            setCommentText('');
+            onCancel();
+          }}
+          disabled={loading}
+          className="flex-1 bg-gray-300 py-3 rounded-lg"
+        >
+          <Text className="text-gray-700 text-center font-semibold">
+            Cancel
+          </Text>
         </TouchableOpacity>
       </View>
-      <Text className="text-gray-600 mb-2">{value || 'No information'}</Text>
-
-      {showCommentInput && (
-        <View className="mt-2 mb-2">
-          <TextInput
-            value={commentText}
-            onChangeText={setCommentText}
-            placeholder="Add a comment..."
-            multiline
-            className="border border-gray-300 rounded-lg p-2 text-gray-700 min-h-[60px]"
-          />
-          <View className="flex-row gap-2 mt-2">
-            <TouchableOpacity
-              onPress={handleSubmitComment}
-              className="flex-1 bg-primary py-2 rounded-lg"
-            >
-              <Text className="text-white text-center font-semibold">
-                Submit
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              onPress={() => {
-                setShowCommentInput(false);
-                setCommentText('');
-              }}
-              className="flex-1 bg-gray-300 py-2 rounded-lg"
-            >
-              <Text className="text-gray-700 text-center font-semibold">
-                Cancel
-              </Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      )}
-
-      {fieldComments.length > 0 && (
-        <View className="mt-2">
-          <Text className="text-sm font-semibold text-gray-700 mb-1">
-            Comments ({fieldComments.length})
-          </Text>
-          {fieldComments.map(comment => (
-            <View key={comment.id} className="bg-gray-50 p-2 rounded-lg mb-1">
-              <Text className="text-sm text-gray-600">{comment.text}</Text>
-              <Text className="text-xs text-gray-400 mt-1">
-                {formatTimestamp(comment.createdAt)}
-              </Text>
-            </View>
-          ))}
-        </View>
-      )}
     </View>
   );
-}
+};
+
+// Comment Item Component
+const CommentItem = ({
+  comment,
+  placeId: _placeId,
+  onDelete,
+}: {
+  comment: Comment;
+  placeId: string;
+  onDelete: (commentId: string | undefined) => void;
+}) => {
+  // Direct client-side comparison: auth.currentUser?.uid === comment.userId
+  const canDelete = auth.currentUser?.uid === comment.userId;
+
+  const handleDelete = () => {
+    Alert.alert(
+      'Delete Comment',
+      'Are you sure you want to delete this comment?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: () => onDelete(comment.id || comment.userId || undefined),
+        },
+      ],
+    );
+  };
+
+  const formatDate = (timestamp: any): string => {
+    if (!timestamp) return 'Recently';
+    try {
+      if (timestamp.toDate) {
+        return timestamp.toDate().toLocaleDateString();
+      }
+      if (timestamp.seconds) {
+        return new Date(timestamp.seconds * 1000).toLocaleDateString();
+      }
+      return 'Recently';
+    } catch {
+      return 'Recently';
+    }
+  };
+
+  return (
+    <View className="bg-tertiary p-4 rounded-2xl mb-3" style={{ shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 4, elevation: 1 }}>
+      <View className="flex-row justify-between items-start mb-3">
+        <Text className="text-base text-gray-800 flex-1 leading-6">{comment.text}</Text>
+        {canDelete && (
+          <TouchableOpacity 
+            onPress={handleDelete}
+            className="ml-2 p-2"
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          >
+            <Text className="text-lg">🗑️</Text>
+          </TouchableOpacity>
+        )}
+      </View>
+      <View className="flex-row justify-between items-center">
+        <Text className="text-xs text-gray-500 font-medium">{formatDate(comment.createdAt)}</Text>
+      </View>
+    </View>
+  );
+};
 
 function MarketDetailModal() {
-  const { selectedMarket, setSelectedMarket } = useSearch();
-  const [marketDetails, setMarketDetails] = useState<MarketDetailData | null>(
-    null,
-  );
+  const { selectedMarket, setSelectedMarket, refreshSavedMarkets } = useSearch();
+  const [_marketDetails, setMarketDetails] = useState<any>(null);
   const [loading, setLoading] = useState(false);
-  const [saving, setSaving] = useState(false);
   const [comments, setComments] = useState<Comment[]>([]);
-  const [activeField, setActiveField] = useState<string>('');
-
-  useEffect(() => {
-    if (selectedMarket) {
-      loadMarketDetails();
-      loadComments();
-    }
-  }, [selectedMarket]);
+  const [loadingComments, setLoadingComments] = useState(false);
+  const [submittingComment, setSubmittingComment] = useState(false);
+  const [showCommentInput, setShowCommentInput] = useState(false);
+  const [lastCommentId, setLastCommentId] = useState<string | undefined>();
+  const [hasMoreComments, setHasMoreComments] = useState(true);
+  const [isSaved, setIsSaved] = useState(false);
+  const [checkingSaved, setCheckingSaved] = useState(false);
+  const saveAnimation = useState(new Animated.Value(0))[0];
+  const insets = useSafeAreaInsets();
 
   const loadMarketDetails = async () => {
     if (!selectedMarket) return;
@@ -168,41 +182,175 @@ function MarketDetailModal() {
     }
   };
 
-  const loadComments = async () => {
+   // Google Maps reviews link
+   const openGoogleMapsReviews = () => {
+    if (!selectedMarket?.place_id) return;
+    
+    // Google Maps place URL with place_id
+    const url = `https://www.google.com/maps/place/?q=place_id:${selectedMarket.place_id}`;
+    
+    Linking.openURL(url).catch(err => {
+      console.error('Error opening Google Maps:', err);
+      Alert.alert('Error', 'Could not open Google Maps');
+    });
+  };
+
+  // Google Maps directions link
+  const openGoogleMapsDirections = () => {
+    if (!selectedMarket?.name) return;
+    
+    // Google Maps directions URL with place_id
+    const url = `https://www.google.com/maps/dir/?api=1&destination=place_id:${selectedMarket.name}`;
+    
+    Linking.openURL(url).catch(err => {
+      console.error('Error opening Google Maps:', err);
+      Alert.alert('Error', 'Could not open Google Maps');
+    });
+  };
+
+  const loadComments = async (reset: boolean = false) => {
     if (!selectedMarket) return;
+    setLoadingComments(true);
     try {
-      const marketComments = await getMarketComments(selectedMarket.place_id);
-      setComments(marketComments);
+      const newComments = await getMarketComments(
+        selectedMarket.place_id,
+        20,
+        reset ? undefined : lastCommentId,
+      );
+      
+      if (reset) {
+        setComments(newComments);
+      } else {
+        setComments(prev => [...prev, ...newComments]);
+      }
+      
+      if (newComments.length > 0) {
+        const lastComment = newComments[newComments.length - 1];
+        setLastCommentId(lastComment.id || lastComment.userId || undefined);
+      }
+      setHasMoreComments(newComments.length === 20);
     } catch (error) {
       console.error('Error loading comments:', error);
+    } finally {
+      setLoadingComments(false);
     }
   };
 
-  const handleAddComment = async (field: string, commentText: string) => {
+  useEffect(() => {
+    if (selectedMarket) {
+      loadMarketDetails();
+      loadComments(true);
+      checkSavedStatus();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedMarket]);
+
+  const checkSavedStatus = async () => {
     if (!selectedMarket) return;
-    setSaving(true);
+    setCheckingSaved(true);
     try {
-      await addMarketComment(selectedMarket.place_id, {
-        field,
-        text: commentText,
-        userId: 'anonymous', // TODO: Replace with actual user ID
-        userName: 'User',
-      });
-      await loadComments();
+      const saved = await isMarketSaved(selectedMarket.place_id);
+      setIsSaved(saved);
+    } catch (error) {
+      console.error('Error checking saved status:', error);
+    } finally {
+      setCheckingSaved(false);
+    }
+  };
+
+
+  const handleAddComment = async (commentText: string) => {
+    if (!selectedMarket) return;
+    setSubmittingComment(true);
+    try {
+      await addMarketComment(selectedMarket.place_id, commentText);
+      setShowCommentInput(false);
+      await loadComments(true);
     } catch (error) {
       console.error('Error adding comment:', error);
+      Alert.alert('Error', 'Failed to add comment. Please try again.');
     } finally {
-      setSaving(false);
+      setSubmittingComment(false);
     }
   };
 
-  const photoUrl = selectedMarket?.photos?.[0]?.photo_reference
-    ? `https://maps.googleapis.com/maps/api/place/photo?maxwidth=800&photo_reference=${selectedMarket.photos[0].photo_reference}&key=${GOOGLE_MAPS_API_KEY}`
-    : marketDetails?.representativePhoto || null;
+  const handleDeleteComment = async (commentId: string | undefined) => {
+    if (!selectedMarket || !commentId) return;
+    try {
+      const success = await deleteMarketComment(selectedMarket.place_id, commentId);
+      if (success) {
+        setComments(prev => prev.filter(c => c.id !== commentId && c.userId !== commentId));
+      } else {
+        Alert.alert('Error', 'Failed to delete comment. Please try again.');
+      }
+    } catch (error) {
+      console.error('Error deleting comment:', error);
+      Alert.alert('Error', 'Failed to delete comment. Please try again.');
+    }
+  };
 
-  const nextOpenInfo = calculateNextOpenDay(
-    selectedMarket?.details?.opening_hours?.periods,
-  );
+  const handleLoadMore = () => {
+    if (!loadingComments && hasMoreComments) {
+      loadComments(false);
+    }
+  };
+
+  const handleSave = async () => {
+    if (!selectedMarket || checkingSaved) return;
+
+    const previousSavedState = isSaved;
+    
+    try {
+      // Optimistic update
+      setIsSaved(!previousSavedState);
+
+      // Trigger animation
+      Animated.sequence([
+        Animated.timing(saveAnimation, {
+          toValue: 1,
+          duration: 300,
+          useNativeDriver: false,
+        }),
+        Animated.delay(1000),
+        Animated.timing(saveAnimation, {
+          toValue: 0,
+          duration: 300,
+          useNativeDriver: false,
+        }),
+      ]).start();
+
+      // Toggle save in Firestore
+      const saved = await toggleSaveMarket(selectedMarket.place_id);
+      setIsSaved(saved);
+
+      // Update global saved markets list
+      await refreshSavedMarkets();
+    } catch (error) {
+      console.error('Error toggling save:', error);
+      // Revert optimistic update
+      setIsSaved(previousSavedState);
+      Alert.alert('Error', 'Failed to save market. Please try again.');
+    }
+  };
+
+  const marketWithDetails = selectedMarket as any;
+  // Support both formats: photos array or direct photo_reference field
+  const photoReference = marketWithDetails?.photos?.[0]?.photo_reference || marketWithDetails?.photo_reference;
+  const photoUrl = photoReference ? getPhotoUrl(photoReference, 800) : null;
+
+  const weeklySchedule = getWeeklySchedule(
+    marketWithDetails?.opening_hours?.periods,
+  ).filter(day => day.isOpen && day.openTime && day.closeTime && day.openTime !== '-' && day.closeTime !== '-');
+
+  const saveButtonBackgroundColor = saveAnimation.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['#FFFFFF', '#FF8A65'],
+  });
+
+  const saveButtonTextColor = saveAnimation.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['#FF8A65', '#FFFFFF'],
+  });
 
   if (!selectedMarket) return null;
 
@@ -217,18 +365,46 @@ function MarketDetailModal() {
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         className="flex-1"
       >
-        <View className="flex-1 bg-white pt-12">
-          {/* Header */}
-          <View className="flex-row justify-between items-center px-4 pb-4 border-b border-gray-200">
+        <View className="flex-1 bg-white" style={{ paddingTop: insets.top, paddingBottom: insets.bottom }}>
+          {/* Sticky Header */}
+          <View className="flex-row justify-between items-center px-5 py-5 bg-white" style={{ shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8, elevation: 3 }}>
             <Text className="text-2xl font-bold text-gray-800">
               Market Details
             </Text>
-            <TouchableOpacity
-              onPress={() => setSelectedMarket(null)}
-              className="px-4 py-2 bg-gray-200 rounded-lg"
-            >
-              <Text className="text-gray-700 font-semibold">Close</Text>
-            </TouchableOpacity>
+            <View className="flex-row gap-3">
+              <TouchableOpacity
+                onPress={handleSave}
+                className="px-5 py-2.5 rounded-full"
+                style={{ overflow: 'hidden', backgroundColor: isSaved ? '#E69DB8' : '#FFFFFF', borderWidth: 2, borderColor: '#E69DB8' }}
+              >
+                <Animated.View
+                  style={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    backgroundColor: saveButtonBackgroundColor,
+                  }}
+                />
+                <Animated.Text
+                  className="font-semibold text-sm"
+                  style={{
+                    color: saveButtonTextColor,
+                    position: 'relative',
+                    zIndex: 1,
+                  }}
+                >
+                  {isSaved ? 'Saved' : 'Save'}
+                </Animated.Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => setSelectedMarket(null)}
+                className="px-5 py-2.5 bg-tertiary rounded-full"
+              >
+                <Text className="text-gray-700 font-semibold text-sm">Close</Text>
+              </TouchableOpacity>
+            </View>
           </View>
 
           {loading ? (
@@ -236,237 +412,224 @@ function MarketDetailModal() {
               <ActivityIndicator size="large" color="#FF8A65" />
             </View>
           ) : (
-            <ScrollView className="flex-1 px-4">
-              {/* Representative Photo */}
-              {photoUrl && (
-                <View className="mt-4 mb-4">
-                  <Image
-                    source={{ uri: photoUrl }}
-                    className="w-full h-64 rounded-lg"
-                    resizeMode="cover"
-                  />
-                </View>
-              )}
+            <View className="flex-1">
+              <ScrollView className="flex-1 px-5" showsVerticalScrollIndicator={false}>
+                {/* Photo */}
+                {photoUrl ? (
+                  <View className="mt-5 mb-5 rounded-3xl overflow-hidden" style={{ shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.1, shadowRadius: 12, elevation: 5 }}>
+                    <Image
+                      source={{ uri: photoUrl }}
+                      className="w-full h-72"
+                      resizeMode="cover"
+                    />
+                  </View>
+                ) : (
+                  <View className="mt-5 mb-5 w-full h-72 bg-secondary rounded-3xl justify-center items-center" style={{ shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.1, shadowRadius: 12, elevation: 5 }}>
+                    <Text className="text-primary text-lg font-semibold">Localmarket Finder</Text>
+                  </View>
+                )}
 
-              {/* Market Name */}
-              <View className="mb-4 pb-4 border-b border-gray-200">
-                <Text className="text-3xl font-bold text-gray-800 mb-2">
-                  {selectedMarket.name}
-                </Text>
-                <View className="flex-row items-center gap-4">
-                  {selectedMarket.rating && (
-                    <Text className="text-gray-600">
-                      ⭐ {selectedMarket.rating}
-                    </Text>
-                  )}
-                  {selectedMarket.user_ratings_total && (
-                    <Text className="text-gray-600">
-                      💬 {selectedMarket.user_ratings_total} reviews
-                    </Text>
-                  )}
-                </View>
-              </View>
-
-              {/* Location */}
-              <FieldSection
-                title="📍 Location"
-                value={
-                  marketDetails?.location ||
-                  selectedMarket.details?.formatted_address ||
-                  'No address available'
-                }
-                fieldName="location"
-                placeId={selectedMarket.place_id}
-                onCommentAdd={handleAddComment}
-                comments={comments}
-              />
-
-              {/* Open Date and Time */}
-              <FieldSection
-                title="🕐 Open Date and Time"
-                value={
-                  nextOpenInfo.text ||
-                  marketDetails?.openDateAndTime ||
-                  'No schedule available'
-                }
-                fieldName="openDateAndTime"
-                placeId={selectedMarket.place_id}
-                onCommentAdd={handleAddComment}
-                comments={comments}
-              />
-
-              {/* Social Link */}
-              <FieldSection
-                title="🔗 Social Link"
-                value={
-                  marketDetails?.socialLink ? (
+               {/* Market Name */}
+               <View className="mb-5 pb-5 bg-tertiary rounded-3xl p-5" style={{ shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8, elevation: 2 }}>
+                  <Text className="text-3xl font-bold text-gray-800 mb-3">
+                    {selectedMarket.name}
+                  </Text>
+                  {(marketWithDetails?.rating || marketWithDetails?.user_ratings_total) && (
                     <TouchableOpacity
-                      onPress={() => {
-                        if (marketDetails.socialLink) {
-                          Linking.openURL(marketDetails.socialLink);
-                        }
-                      }}
+                      onPress={openGoogleMapsReviews}
+                      className="flex-row items-center gap-3 mt-2"
                     >
-                      <Text className="text-blue-500 underline">
-                        {marketDetails.socialLink}
+                      <View className="bg-white px-3 py-1.5 rounded-full flex-row items-center gap-1.5">
+                        <Image
+                          source={require('../../assets/icons/google.png')}
+                          className="w-4 h-4"
+                          resizeMode="contain"
+                        />
+                        <Text className="text-gray-700 font-semibold text-sm">
+                          Google
+                        </Text>
+                      </View>
+                      {marketWithDetails?.rating && (
+                        <View className="bg-white px-3 py-1.5 rounded-full flex-row items-center gap-1">
+                          <Text className="text-lg">⭐</Text>
+                          <Text className="text-gray-700 font-semibold text-sm">
+                            {marketWithDetails.rating}
+                          </Text>
+                        </View>
+                      )}
+                      {marketWithDetails?.user_ratings_total && (
+                        <View className="bg-white px-3 py-1.5 rounded-full flex-row items-center gap-1">
+                          <Text className="text-lg">💬</Text>
+                          <Text className="text-gray-700 font-semibold text-sm">
+                            {marketWithDetails.user_ratings_total} reviews
+                          </Text>
+                        </View>
+                      )}
+                    </TouchableOpacity>
+                  )}
+                </View>
+
+                {/* Location */}
+                {marketWithDetails?.formatted_address && (
+                  <View className="mb-5 pb-5 bg-white rounded-3xl p-5" style={{ shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8, elevation: 2 }}>
+                    <View className="flex-row items-center gap-2 mb-3">
+                      <View className="bg-secondary w-10 h-10 rounded-full justify-center items-center">
+                        <Text className="text-xl">📍</Text>
+                      </View>
+                      <Text className="text-lg font-bold text-gray-800">
+                        Location
+                      </Text>
+                    </View>
+                    <Text className="text-gray-600 text-base leading-6 ml-12 mb-3">
+                      {marketWithDetails.formatted_address}
+                    </Text>
+                    <TouchableOpacity
+                      onPress={openGoogleMapsDirections}
+                      className="ml-12 bg-primary px-4 py-2.5 rounded-full flex-row items-center gap-2 self-start"
+                    >
+                      <Text className="text-lg">🧭</Text>
+                      <Text className="text-white font-semibold text-sm">
+                        Directions
                       </Text>
                     </TouchableOpacity>
-                  ) : (
-                    'No social link'
-                  )
-                }
-                fieldName="socialLink"
-                placeId={selectedMarket.place_id}
-                onCommentAdd={handleAddComment}
-                comments={comments}
-              />
-
-              {/* Pet Friendly */}
-              <FieldSection
-                title="🐾 Pet Friendly"
-                value={marketDetails?.petFriendly || 'No information available'}
-                fieldName="petFriendly"
-                placeId={selectedMarket.place_id}
-                onCommentAdd={handleAddComment}
-                comments={comments}
-              />
-
-              {/* Reusable */}
-              <FieldSection
-                title="♻️ Reusable"
-                value={marketDetails?.reusable || 'No information available'}
-                fieldName="reusable"
-                placeId={selectedMarket.place_id}
-                onCommentAdd={handleAddComment}
-                comments={comments}
-              />
-
-              {/* Toilet */}
-              <FieldSection
-                title="🚻 Toilet"
-                value={marketDetails?.toilet || 'No information available'}
-                fieldName="toilet"
-                placeId={selectedMarket.place_id}
-                onCommentAdd={handleAddComment}
-                comments={comments}
-              />
-
-              {/* Live Music */}
-              <FieldSection
-                title="🎵 Live Music"
-                value={
-                  marketDetails?.liveMusic ? (
-                    <View>
-                      <Text className="text-gray-600">
-                        {marketDetails.liveMusic.available === 'yes'
-                          ? `Yes${marketDetails.liveMusic.time ? ` - ${marketDetails.liveMusic.time}` : ''}`
-                          : 'No'}
-                      </Text>
-                    </View>
-                  ) : (
-                    'No information available'
-                  )
-                }
-                fieldName="liveMusic"
-                placeId={selectedMarket.place_id}
-                onCommentAdd={handleAddComment}
-                comments={comments}
-              />
-
-              {/* Parking */}
-              <FieldSection
-                title="🅿️ Parking"
-                value={
-                  marketDetails?.parking ? (
-                    <View>
-                      <Text className="text-gray-600">
-                        {marketDetails.parking.type}
-                      </Text>
-                      {marketDetails.parking.link && (
-                        <TouchableOpacity
-                          onPress={() => {
-                            Linking.openURL(marketDetails.parking!.link!);
-                          }}
-                        >
-                          <Text className="text-blue-500 underline mt-1">
-                            {marketDetails.parking.link}
-                          </Text>
-                        </TouchableOpacity>
-                      )}
-                    </View>
-                  ) : (
-                    'No information available'
-                  )
-                }
-                fieldName="parking"
-                placeId={selectedMarket.place_id}
-                onCommentAdd={handleAddComment}
-                comments={comments}
-              />
-
-              {/* Accessibility */}
-              <FieldSection
-                title="♿ Accessibility"
-                value={
-                  marketDetails?.accessibility ? (
-                    <View>
-                      {marketDetails.accessibility.transportInfo && (
-                        <Text className="text-gray-600 mb-1">
-                          Transport: {marketDetails.accessibility.transportInfo}
-                        </Text>
-                      )}
-                      {marketDetails.accessibility.wheelchairAccessible && (
-                        <Text className="text-gray-600">
-                          Wheelchair Accessible:{' '}
-                          {marketDetails.accessibility.wheelchairAccessible}
-                        </Text>
-                      )}
-                    </View>
-                  ) : (
-                    'No information available'
-                  )
-                }
-                fieldName="accessibility"
-                placeId={selectedMarket.place_id}
-                onCommentAdd={handleAddComment}
-                comments={comments}
-              />
-
-              {/* General Comments Section */}
-              <View className="mb-4 pb-4 border-b border-gray-200">
-                <Text className="text-lg font-semibold text-gray-800 mb-2">
-                  💬 General Comments
-                </Text>
-                {comments
-                  .filter(c => !c.field || c.field === 'general')
-                  .map(comment => (
-                    <View
-                      key={comment.id}
-                      className="bg-gray-50 p-3 rounded-lg mb-2"
-                    >
-                      <Text className="text-sm text-gray-600">
-                        {comment.text}
-                      </Text>
-                      <Text className="text-xs text-gray-400 mt-1">
-                        {comment.createdAt?.toDate?.().toLocaleDateString() ||
-                          'Recently'}
-                      </Text>
-                    </View>
-                  ))}
-                {comments.filter(c => !c.field || c.field === 'general')
-                  .length === 0 && (
-                  <Text className="text-gray-500 text-sm">
-                    No comments yet. Be the first to comment!
-                  </Text>
+                  </View>
                 )}
-              </View>
 
-              {saving && (
-                <View className="py-4">
-                  <ActivityIndicator size="small" color="#FF8A65" />
+                {/* Date and Time */}
+                <View className="mb-5 pb-5 bg-white rounded-3xl p-5" style={{ shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8, elevation: 2 }}>
+                  <View className="flex-row items-center gap-2 mb-4">
+                    <View className="bg-secondary w-10 h-10 rounded-full justify-center items-center">
+                      <Text className="text-xl">📅</Text>
+                    </View>
+                    <Text className="text-lg font-bold text-gray-800">
+                      Date and Time
+                    </Text>
+                  </View>
+                  {weeklySchedule.length > 0 ? (
+                    <View className="gap-2 ml-12">
+                      {weeklySchedule.map((day, index) => (
+                        <View key={index} className="bg-tertiary rounded-2xl p-3">
+                          <Text className="text-gray-800 font-semibold text-base mb-1">
+                            {day.day} {day.date}
+                          </Text>
+                          <Text className="text-primary font-semibold text-sm">
+                            {day.openTime} - {day.closeTime}
+                          </Text>
+                        </View>
+                      ))}
+                    </View>
+                  ) : (
+                    <View className="bg-tertiary rounded-2xl p-4 ml-12">
+                      <Text className="text-gray-500 text-sm text-center">
+                        No schedule available
+                      </Text>
+                    </View>
+                  )}
                 </View>
-              )}
-            </ScrollView>
+
+                {/* Reaction Fields */}
+                <View className="mb-5">
+                  <Text className="text-lg font-bold text-gray-800 mb-4 ml-2">
+                    Market Info
+                  </Text>
+                  <View className="bg-white rounded-3xl p-4" style={{ shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8, elevation: 2 }}>
+                    <ReactionField
+                      fieldName="parking"
+                      label="🅿️ Parking"
+                      placeId={selectedMarket.place_id}
+                    />
+                    <ReactionField
+                      fieldName="petFriendly"
+                      label="🐾 Pet Friendly"
+                      placeId={selectedMarket.place_id}
+                    />
+                    <ReactionField
+                      fieldName="reusable"
+                      label="♻️ Reusable"
+                      placeId={selectedMarket.place_id}
+                    />
+                    <ReactionField
+                      fieldName="toilet"
+                      label="🚻 Toilet"
+                      placeId={selectedMarket.place_id}
+                    />
+                    <ReactionField
+                      fieldName="liveMusic"
+                      label="🎵 Live Music"
+                      placeId={selectedMarket.place_id}
+                    />
+                    <ReactionField
+                      fieldName="accessibility"
+                      label="♿ Accessibility"
+                      placeId={selectedMarket.place_id}
+                    />
+                  </View>
+                </View>
+
+                {/* Comments Section */}
+                <View className="mb-5 pb-5 bg-white rounded-3xl p-5" style={{ shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8, elevation: 2 }}>
+                  <View className="flex-row justify-between items-center mb-4">
+                    <View className="flex-row items-center gap-2">
+                      <View className="bg-secondary w-10 h-10 rounded-full justify-center items-center">
+                        <Text className="text-xl">💬</Text>
+                      </View>
+                      <Text className="text-lg font-bold text-gray-800">
+                        Comments
+                      </Text>
+                    </View>
+                    <TouchableOpacity
+                      onPress={() => setShowCommentInput(!showCommentInput)}
+                      className="px-4 py-2 bg-primary rounded-full"
+                      style={{ shadowColor: '#E69DB8', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.3, shadowRadius: 4, elevation: 3 }}
+                    >
+                      <Text className="text-white text-xs font-bold">
+                        {showCommentInput ? 'Cancel' : '+ Add'}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+
+                  {showCommentInput && (
+                    <View className="mb-4">
+                      <CommentInputComponent
+                        onSubmit={handleAddComment}
+                        onCancel={() => setShowCommentInput(false)}
+                        loading={submittingComment}
+                      />
+                    </View>
+                  )}
+
+                  {comments.length === 0 && !loadingComments ? (
+                    <View className="bg-tertiary rounded-2xl p-6 items-center">
+                      <Text className="text-gray-400 text-sm text-center">
+                        No comments yet. Be the first to comment! 💭
+                      </Text>
+                    </View>
+                  ) : (
+                    <FlatList
+                      data={comments}
+                      keyExtractor={item => item.id || item.userId || `comment-${item.createdAt}`}
+                      renderItem={({ item }) => (
+                        <CommentItem
+                          comment={item}
+                          placeId={selectedMarket.place_id}
+                          onDelete={handleDeleteComment}
+                        />
+                      )}
+                      scrollEnabled={false}
+                      onEndReached={handleLoadMore}
+                      onEndReachedThreshold={0.5}
+                      ListFooterComponent={
+                        loadingComments ? (
+                          <View className="py-4">
+                            <ActivityIndicator size="small" color="#E69DB8" />
+                          </View>
+                        ) : null
+                      }
+                    />
+                  )}
+                </View>
+              </ScrollView>
+            </View>
           )}
         </View>
       </KeyboardAvoidingView>

@@ -30,7 +30,6 @@ function SearchInput() {
         setIsSearch(false);
         navigation.navigate('MainTabs', { screen: 'Map' });
       } else {
-        // ❌ 정확한 위치 없을 때 처리
         Alert.alert('검색 결과가 없습니다. 정확한 주소를 입력해주세요.');
       }
     } catch (err) {
@@ -50,11 +49,11 @@ function SearchInput() {
         onPress={(data, details = null) => {
           if (details?.geometry?.location) {
             const { lat, lng } = details.geometry.location;
-            setSelectedLocation({ lat, lng }); // ✅ 좌표 저장
-            setIsSearch(false); // ✅ 검색 모드 해제
+            setSelectedLocation({ lat, lng });
+            setIsSearch(false);
             navigation.navigate('MainTabs', {
               screen: 'Map',
-            }); // ✅ 맵 화면으로 이동
+            });
           }
         }}
         fetchDetails={true}
@@ -64,7 +63,6 @@ function SearchInput() {
         enableHighAccuracyLocation={true}
         autoFillOnNotFound={true}
         onFail={error => console.error('Places Error:', error)}
-        onNotFound={() => console.log('No results found')}
         listViewDisplayed={isSearch}
         styles={{
           container: { flex: 1 },

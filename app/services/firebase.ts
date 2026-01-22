@@ -1,6 +1,13 @@
 import { initializeApp, getApps, FirebaseApp } from 'firebase/app';
 import { getFirestore, Firestore, enableNetwork } from 'firebase/firestore';
 import {
+  getAuth,
+  signInAnonymously,
+  onAuthStateChanged,
+  User,
+  Auth,
+} from 'firebase/auth';
+import {
   FIREBASE_API_KEY,
   FIREBASE_APP_ID,
   FIREBASE_PROJECT_ID,
@@ -62,21 +69,23 @@ const firebaseConfig = {
 // Initialize Firebase (singleton pattern)
 let app: FirebaseApp;
 let db: Firestore;
+let auth: Auth;
 
 if (getApps().length === 0) {
   try {
     app = initializeApp(firebaseConfig);
     db = getFirestore(app);
+    auth = getAuth(app);
 
-    // 네트워크 연결 활성화 (오프라인 모드 방지) - 비동기로 처리
-    enableNetwork(db)
-      .then(() => {
-        console.log('✅ Firebase 초기화 완료 (네트워크 연결 활성화)');
-      })
-      .catch(networkError => {
-        console.warn('⚠️ 네트워크 연결 설정 중 경고:', networkError);
-        console.log('✅ Firebase 초기화 완료 (오프라인 모드로 계속)');
-      });
+    // 네트워크 연결 활성화 (오프라인 모드 방지)
+    enableNetwork(db).catch(() => {
+      // 오프라인 모드로 계속 진행
+    });
+
+    // Anonymous Authentication 자동 로그인
+    signInAnonymously(auth).catch(error => {
+      console.error('❌ Anonymous Authentication 실패:', error);
+    });
   } catch (error) {
     console.error('❌ Firebase 초기화 실패:', error);
     throw error;
@@ -84,13 +93,36 @@ if (getApps().length === 0) {
 } else {
   app = getApps()[0];
   db = getFirestore(app);
+  auth = getAuth(app);
 
   // 기존 인스턴스에서도 네트워크 연결 확인
-  enableNetwork(db).catch(error => {
-    // 네트워크 활성화 실패는 무시 (오프라인 모드로 계속)
-    console.warn('⚠️ 네트워크 활성화 실패 (오프라인 모드로 계속):', error);
+  enableNetwork(db).catch(() => {
+    // 오프라인 모드로 계속 진행
+  });
+
+  // Anonymous Authentication 확인 및 자동 로그인
+  onAuthStateChanged(auth, user => {
+    if (!user) {
+      signInAnonymously(auth).catch(error => {
+        console.error('❌ Anonymous Authentication 실패:', error);
+      });
+    }
   });
 }
 
-export { db };
+// Get current user ID (for reactions and comments)
+export function getCurrentUserId(): string | null {
+  return auth.currentUser?.uid || null;
+}
+
+// Ensure user is authenticated
+export async function ensureAuthenticated(): Promise<string> {
+  if (auth.currentUser) {
+    return auth.currentUser.uid;
+  }
+  const userCredential = await signInAnonymously(auth);
+  return userCredential.user.uid;
+}
+
+export { db, auth };
 export default app;

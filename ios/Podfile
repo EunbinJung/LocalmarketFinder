@@ -19,10 +19,17 @@ if linkage != nil
 end
 
 target 'localmarketfinder' do
+  begin
   config = use_native_modules!
+    react_native_path = config && config[:reactNativePath] ? config[:reactNativePath] : '../node_modules/react-native'
+  rescue => e
+    Pod::UI.warn "use_native_modules! failed: #{e.message}. Using default path."
+    react_native_path = '../node_modules/react-native'
+    config = { reactNativePath: react_native_path }
+  end
 
   use_react_native!(
-    :path => config[:reactNativePath],
+    :path => react_native_path,
     # An absolute path to your application root.
     :app_path => "#{Pod::Config.instance.installation_root}/..",
     :hermes_enabled => true,
@@ -35,13 +42,44 @@ target 'localmarketfinder' do
   pod 'react-native-maps', :path => rn_maps_path
   pod 'react-native-google-maps', :path => rn_maps_path
 
+  # Firebase Swift pods require modular headers
+  pod 'GoogleUtilities', :modular_headers => true
+  pod 'FirebaseCore', :modular_headers => true
+  pod 'FirebaseCoreExtension', :modular_headers => true
+  pod 'FirebaseCoreInternal', :modular_headers => true
+  pod 'FirebaseFirestore', :modular_headers => true
+  pod 'FirebaseFirestoreInternal', :modular_headers => true
+
   post_install do |installer|
     react_native_post_install(
       installer,
-      config[:reactNativePath],
+      react_native_path,
       :mac_catalyst_enabled => false,
       # :ccache_enabled => true
     )
+    
+    # Disable non-modular include warnings for all pods when using frameworks
+    installer.pods_project.targets.each do |target|
+      target.build_configurations.each do |config|
+        # Disable the error for non-modular includes in framework modules
+        config.build_settings['CLANG_WARN_NON_MODULAR_INCLUDES_IN_FRAMEWORK_MODULES'] = 'NO'
+      end
+    end
+    
+    # Fix FirebaseFirestoreInternal weak framework linking issue
+    # Remove weak_framework for FirebaseFirestoreInternal from xcconfig files
+    xcconfig_paths = [
+      "#{installer.sandbox.root}/Target Support Files/Pods-localmarketfinder/Pods-localmarketfinder.debug.xcconfig",
+      "#{installer.sandbox.root}/Target Support Files/Pods-localmarketfinder/Pods-localmarketfinder.release.xcconfig"
+    ]
+    xcconfig_paths.each do |xcconfig_path|
+      if File.exist?(xcconfig_path)
+        content = File.read(xcconfig_path)
+        # Remove -weak_framework "FirebaseFirestoreInternal" from OTHER_LDFLAGS
+        content.gsub!(/-weak_framework "FirebaseFirestoreInternal"/, '')
+        File.write(xcconfig_path, content)
+      end
+    end
 
   end
 end

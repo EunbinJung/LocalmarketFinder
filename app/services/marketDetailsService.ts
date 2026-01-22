@@ -8,49 +8,91 @@ import {
   updateDoc,
   addDoc,
   query,
-  where,
   getDocs,
   getDocsFromCache,
   getDocsFromServer,
+  orderBy,
+  limit as firestoreLimit,
+  startAfter,
   Timestamp,
 } from 'firebase/firestore';
 import { db } from './firebase';
 
 export interface MarketDetailData {
-  place_id: string;
-  name: string;
-  location?: string;
-  openDateAndTime?: string;
-  socialLink?: string;
-  petFriendly?: 'Yes' | 'No' | '리드 필수';
-  reusable?: 'zero-waste' | 'compost bin 제공' | '개인 용기 사용 가능';
-  toilet?: '있음' | '없음';
-  liveMusic?: {
-    available: 'yes' | 'no';
-    time?: string;
-  };
-  parking?: {
-    type: '무료' | '유료' | '주변 주차 정보 링크';
-    link?: string;
-  };
-  accessibility?: {
-    transportInfo?: string;
-    wheelchairAccessible?: 'yes' | 'no';
-  };
-  comments?: Comment[];
-  representativePhoto?: string;
-  createdAt?: Timestamp;
-  updatedAt?: Timestamp;
+  parking: {
+    Free: 0,
+    Paid: 0,
+    Street: 0,
+    lastUpdated: Timestamp,
+    previousCycle: {
+      Free: 0,
+      Paid: 0,
+      Street: 0,
+    },
+  petFriendly: {
+    Yes: 0,
+    No: 0,
+    LeashRequired: 0,
+    lastUpdated: Timestamp,
+    previousCycle: {
+      Yes: 0,
+      No: 0,
+      LeashRequired: 0,
+    },
+  },
+  reusable: {
+    Yes: 0,
+    No: 0,
+    lastUpdated: Timestamp,
+    previousCycle: {
+      Yes: 0,
+      No: 0,
+    },
+  },
+  toilet: {
+    Yes: 0,
+    No: 0,
+    lastUpdated: Timestamp,
+    previousCycle: {
+      Yes: 0,
+      No: 0,
+    },
+  },
+  liveMusic: {
+    Yes: 0,
+    No: 0,
+    lastUpdated: Timestamp,
+    previousCycle: {
+      Yes: 0,
+      No: 0,
+    },
+  },
+  accessibility: {
+    Yes: 0,
+    No: 0,
+    lastUpdated: Timestamp,
+    previousCycle: {
+      Yes: 0,
+      No: 0,
+    },
+  },
+  cycle: {
+    lastResetAt: Timestamp,
+    nextResetAt: Timestamp,
+  },
+  updatedAt: Timestamp,
+  source: 'user',
+  comments: Comment[];
+}
 }
 
 export interface Comment {
-  id: string;
-  field?: string; // Which field this comment is about (e.g., 'petFriendly', 'parking', etc.)
-  text: string;
-  userId?: string;
-  userName?: string;
-  createdAt: Timestamp;
-  updatedAt?: Timestamp;
+  id?: string;
+  text: string,
+  userId?: string,
+  anonymous: true,
+  createdAt: Timestamp,
+  updatedAt?: Timestamp
 }
 
 // Get market details
@@ -58,29 +100,24 @@ export async function getMarketDetails(
   placeId: string,
 ): Promise<MarketDetailData | null> {
   try {
-    const docRef = doc(db, 'marketDetails', placeId);
+    const docRef = doc(db, 'markets', placeId, 'details', 'info');
 
-    // 서버에서 먼저 시도, 실패하면 캐시에서 가져오기
+    // Try server first, fallback to cache
     let docSnap;
     try {
-      // 서버에서 가져오기 시도
       docSnap = await getDocFromServer(docRef);
     } catch (serverError: any) {
-      // 서버 접근 실패 시 (오프라인 등) 캐시에서 가져오기 시도
+      // Fallback to cache if server unavailable
       if (
         serverError?.code === 'unavailable' ||
         serverError?.code === 'failed-precondition'
       ) {
-        console.log('📡 서버 접근 불가, 캐시에서 데이터 가져오기 시도...');
         try {
           docSnap = await getDocFromCache(docRef);
-        } catch (cacheError) {
-          // 캐시에도 없으면 일반 getDoc 사용 (자동으로 소스 선택)
-          console.log('💾 캐시에도 없음, 기본 getDoc 사용...');
+        } catch {
           docSnap = await getDoc(docRef);
         }
       } else {
-        // 다른 에러는 일반 getDoc으로 재시도
         docSnap = await getDoc(docRef);
       }
     }
@@ -90,7 +127,7 @@ export async function getMarketDetails(
     }
     return null;
   } catch (error: any) {
-    // 오프라인 에러는 조용히 처리 (앱이 계속 작동하도록)
+    // Handle offline errors gracefully
     if (error?.code === 'unavailable' || error?.message?.includes('offline')) {
       console.warn('⚠️ 오프라인 상태: 마켓 상세 정보를 가져올 수 없습니다.');
       return null;
@@ -103,15 +140,21 @@ export async function getMarketDetails(
 // Create or update market details
 export async function saveMarketDetails(
   placeId: string,
+  website: string,
+  location: string,
+  dateAndTime: string[],
   data: Partial<MarketDetailData>,
 ): Promise<boolean> {
   try {
-    const docRef = doc(db, 'marketDetails', placeId);
+    const docRef = doc(db, 'markets', placeId, 'details', 'info');
     const docSnap = await getDoc(docRef);
 
     const updateData = {
       ...data,
       place_id: placeId,
+      website: website,
+      location: location,
+      dateAndTime: dateAndTime,
       updatedAt: Timestamp.now(),
     };
 
@@ -133,16 +176,28 @@ export async function saveMarketDetails(
 // Add a comment to a market
 export async function addMarketComment(
   placeId: string,
-  comment: Omit<Comment, 'id' | 'createdAt' | 'updatedAt'>,
+  commentText: string,
 ): Promise<string | null> {
   try {
-    const commentsRef = collection(db, 'marketDetails', placeId, 'comments');
+    const detailsDocRef = doc(db, 'markets', placeId, 'details', 'info');
+    const commentsRef = collection(detailsDocRef, 'comments');
+    
+    // Get current user ID for comment ownership
+    const { auth } = await import('./firebase');
+    const userId = auth.currentUser?.uid || null;
+    
     const newComment = {
-      ...comment,
+      text: commentText,
+      userId: userId,
       createdAt: Timestamp.now(),
-      updatedAt: Timestamp.now(),
+      anonymous: true,
     };
     const docRef = await addDoc(commentsRef, newComment);
+    
+    // Store comment ID for user to allow deletion
+    const { addUserCommentId } = await import('../utils/commentStorage');
+    await addUserCommentId(placeId, docRef.id);
+    
     return docRef.id;
   } catch (error) {
     console.error('Error adding comment:', error);
@@ -150,55 +205,90 @@ export async function addMarketComment(
   }
 }
 
-// Get all comments for a market
-export async function getMarketComments(placeId: string): Promise<Comment[]> {
+// Get all comments for a market with pagination
+export async function getMarketComments(
+  placeId: string,
+  limit: number = 20,
+  lastCommentId?: string,
+): Promise<Comment[]> {
   try {
-    const commentsRef = collection(db, 'marketDetails', placeId, 'comments');
+    const detailsDocRef = doc(db, 'markets', placeId, 'details', 'info');
+    const commentsRef = collection(detailsDocRef, 'comments');
 
-    // 서버에서 먼저 시도, 실패하면 캐시에서 가져오기
+    let q = query(commentsRef, orderBy('createdAt', 'desc'), firestoreLimit(limit));
+
+    if (lastCommentId) {
+      const lastDoc = doc(commentsRef, lastCommentId);
+      const lastDocSnap = await getDoc(lastDoc);
+      if (lastDocSnap.exists()) {
+        q = query(q, startAfter(lastDocSnap));
+      }
+    }
+
+    // Try server first, fallback to cache
     let querySnapshot;
     try {
-      querySnapshot = await getDocsFromServer(commentsRef);
+      querySnapshot = await getDocsFromServer(q);
     } catch (serverError: any) {
       if (
         serverError?.code === 'unavailable' ||
         serverError?.code === 'failed-precondition'
       ) {
-        console.log('📡 서버 접근 불가, 캐시에서 댓글 가져오기 시도...');
         try {
-          querySnapshot = await getDocsFromCache(commentsRef);
-        } catch (cacheError) {
-          querySnapshot = await getDocs(commentsRef);
+          querySnapshot = await getDocsFromCache(q);
+        } catch {
+          querySnapshot = await getDocs(q);
         }
       } else {
-        querySnapshot = await getDocs(commentsRef);
+        querySnapshot = await getDocs(q);
       }
     }
 
     const comments: Comment[] = [];
 
-    querySnapshot.forEach(doc => {
+    querySnapshot.forEach(commentDoc => {
+      const data = commentDoc.data();
       comments.push({
-        id: doc.id,
-        ...doc.data(),
+        id: commentDoc.id,
+        userId: data.userId,
+        text: data.text,
+        anonymous: data.anonymous,
+        createdAt: data.createdAt,
+        ...data,
       } as Comment);
     });
 
-    return comments.sort((a, b) => {
-      const aTime =
-        a.createdAt?.toMillis?.() || a.createdAt?.seconds * 1000 || 0;
-      const bTime =
-        b.createdAt?.toMillis?.() || b.createdAt?.seconds * 1000 || 0;
-      return bTime - aTime;
-    });
+    return comments;
   } catch (error: any) {
-    // 오프라인 에러는 조용히 처리
+    // Handle offline errors gracefully
     if (error?.code === 'unavailable' || error?.message?.includes('offline')) {
       console.warn('⚠️ 오프라인 상태: 댓글을 가져올 수 없습니다.');
       return [];
     }
     console.error('Error getting comments:', error);
     return [];
+  }
+}
+
+// Delete a comment
+export async function deleteMarketComment(
+  placeId: string,
+  commentId: string,
+): Promise<boolean> {
+  try {
+    const { doc: docFn, deleteDoc } = await import('firebase/firestore');
+    const detailsDocRef = docFn(db, 'markets', placeId, 'details', 'info');
+    const commentRef = docFn(detailsDocRef, 'comments', commentId);
+    await deleteDoc(commentRef);
+    
+    // Remove from user's comment IDs
+    const { removeUserCommentId } = await import('../utils/commentStorage');
+    await removeUserCommentId(placeId, commentId);
+    
+    return true;
+  } catch (error) {
+    console.error('Error deleting comment:', error);
+    return false;
   }
 }
 
@@ -209,7 +299,7 @@ export async function updateFieldFromComments(
   value: any,
 ): Promise<boolean> {
   try {
-    const docRef = doc(db, 'marketDetails', placeId);
+    const docRef = doc(db, 'markets', placeId, 'details', 'info');
     await updateDoc(docRef, {
       [field]: value,
       updatedAt: Timestamp.now(),

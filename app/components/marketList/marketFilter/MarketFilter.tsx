@@ -1,9 +1,24 @@
-import { Text, TouchableOpacity, View } from 'react-native';
+import { Text, TouchableOpacity, Alert } from 'react-native';
 import { useSearch } from '../../../context/SearchContext';
-import { calculateNextOpenDay } from '../marketCard/utils/calculateNextOpenDay';
+import { getMarketOpenStatus } from '../../../utils/marketOpenStatus';
+import { ScrollView } from 'react-native-gesture-handler';
 
 function MarketFilter() {
-  const { markets, setFilteredMarkets, selectedLocation } = useSearch();
+  const { markets, setFilteredMarkets, selectedLocation, mapCenter } = useSearch();
+
+  const getDistance = (
+    lat1: number,
+    lng1: number,
+    lat2: number,
+    lng2: number,
+  ) => {
+    return Math.sqrt(Math.pow(lat1 - lat2, 2) + Math.pow(lng1 - lng2, 2));
+  };
+  
+  const getBaseLocation = () => {
+    if (selectedLocation) return selectedLocation;
+    return mapCenter; // 지도 중심 fallback
+  };
 
   const filterOptions = [
     {
@@ -17,66 +32,112 @@ function MarketFilter() {
       label: 'Closest to Me',
       value: 'near-me',
       onPress: () => {
-        if (!selectedLocation) return;
+        const baseLocation = getBaseLocation();
+        
+        if (!baseLocation) {
+          Alert.alert(
+            'Location Required',
+            'Please select a location or allow location access to use this filter.',
+            [{ text: 'OK' }],
+          );
+          return;
+        }
 
-        const sorted = [...markets].sort((a, b) => {
-          const distanceA = Math.sqrt(
-            Math.pow(a.geometry.location.lat - selectedLocation.lat, 2) +
-              Math.pow(a.geometry.location.lng - selectedLocation.lng, 2),
+        // Filter out markets without valid coordinates
+        const marketsWithLocation = markets.filter(market => {
+          const location = market.geometry?.location;
+          return (
+            location &&
+            typeof location.lat === 'number' &&
+            typeof location.lng === 'number' &&
+            !isNaN(location.lat) &&
+            !isNaN(location.lng)
           );
-          const distanceB = Math.sqrt(
-            Math.pow(b.geometry.location.lat - selectedLocation.lat, 2) +
-              Math.pow(b.geometry.location.lng - selectedLocation.lng, 2),
+        });
+
+        if (marketsWithLocation.length === 0) {
+          Alert.alert(
+            'No Markets Found',
+            'No markets with valid location data available.',
+            [{ text: 'OK' }],
           );
+          return;
+        }
+
+        // Sort by distance
+        const sorted = [...marketsWithLocation].sort((a, b) => {
+          const aLoc = a.geometry!.location;
+          const bLoc = b.geometry!.location;
+
+          const distanceA = getDistance(
+            aLoc.lat,
+            aLoc.lng,
+            baseLocation.lat,
+            baseLocation.lng,
+          );
+
+          const distanceB = getDistance(
+            bLoc.lat,
+            bLoc.lng,
+            baseLocation.lat,
+            baseLocation.lng,
+          );
+
           return distanceA - distanceB;
         });
-        console.log(sorted);
-        setFilteredMarkets(sorted);
-      },
-    },
-    {
-      label: 'Opening soon',
-      value: 'open-soon',
-      onPress: () => {
-        const soonMarkets = markets
-          .map(market => {
-            const next = calculateNextOpenDay(
-              market.details?.opening_hours?.periods,
-            );
-            return { ...market, next };
-          })
-          .filter(m => m.next?.daysAhead !== null)
-          .sort((a, b) => (a.next!.daysAhead ?? 7) - (b.next!.daysAhead ?? 7));
 
-        setFilteredMarkets(soonMarkets);
+        setFilteredMarkets(sorted);
       },
     },
     {
       label: 'Open Now',
       value: 'open-now',
       onPress: () => {
-        // const openNow = markets.filter(
-        //   market => market.opening_hours?.open_now === true,
-        // );
-        // setFilteredMarkets(openNow);
+        const openNow = markets.filter(market => {
+          try {
+            const status = getMarketOpenStatus(market.opening_hours?.periods);
+            // Only include markets that are currently open
+            // Exclude INVALID and CLOSED markets
+            return status.status === 'OPEN_NOW';
+          } catch {
+            // If status calculation fails, exclude the market
+            return false;
+          }
+        });
+
+        if (openNow.length === 0) {
+          Alert.alert(
+            'No Markets Open',
+            'There are no open markets at the moment.',
+            [{ text: 'OK' }],
+          );
+          return;
+        }
+
+        setFilteredMarkets(openNow);
       },
     },
   ];
 
   return (
-    <View className="flex-row items-center justify-start gap-2 mt-3 mx-4 overflow-x-scroll scrollbar-hide">
+    <ScrollView
+    horizontal
+    showsHorizontalScrollIndicator={false}
+    contentContainerStyle={{ gap: 8, paddingRight: 16 }}
+    className="mt-3 mx-4">
       {filterOptions.map(option => (
         <TouchableOpacity
           key={option.value}
           className="py-1 px-2 rounded-lg bg-gray-200"
           onPress={option.onPress}
+          activeOpacity={0.7}
         >
           <Text className="text-lg font-semibold text-gray-800">
             {option.label}
           </Text>
         </TouchableOpacity>
       ))}
-    </View>
+    </ScrollView>
   );
 }
 

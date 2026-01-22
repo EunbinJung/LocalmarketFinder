@@ -1,0 +1,21 @@
+{
+  "name": "localmarketfinder-scripts",
+  "version": "1.0.0",
+  "description": "Scripts for managing Localmarket Finder data",
+  "main": "index.js",
+  "scripts": {
+    "check": "node check_firebase_connection.js",
+    "inspect": "node inspect_firestore_structure.js",
+    "init": "node initialize_details_subcollections.js",
+    "import": "node import_google_places.js",
+    "import:test": "node import_google_places.test.js",
+    "discover": "node discover_markets.js",
+    "discover:test": "node discover_markets.test.js"
+  },
+  "dependencies": {
+    "firebase-admin": "^12.0.0",
+    "axios": "^1.6.0",
+    "dotenv": "^16.0.0"
+  },
+  "devDependencies": {}
+}
