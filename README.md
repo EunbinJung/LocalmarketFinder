@@ -5,6 +5,9 @@ LocalMarketFinder is an iOS app that helps users explore nearby local markets th
 
 Built with **React Native, TypeScript, Firebase**, and **Google Maps APIs**.
 
+<img src="https://github.com/user-attachments/assets/b9094c4e-36ba-4a5e-94bd-7efa3704aa41"  width="200" height="400"/>
+
+
 ---
 
 ## ✨ Why LocalMarketFinder?
@@ -104,10 +107,9 @@ npx react-native start --reset-cache
 npm run ios
 ```
 
----
 
-# [x] iOS only   
-# [x] Minimum iOS version: 14.0   
+### iOS only   
+### Minimum iOS version: 14.0   
 
 ---
 
