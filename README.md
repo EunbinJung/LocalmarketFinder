@@ -98,19 +98,34 @@ cd ios
 bundle install
 bundle exec pod install
 cd ..
+
+npx react-native start --reset-cache
+
 npm run ios
 ```
 
-[x]iOS only
-[x]Minimum iOS version: 14.0
+---
 
-📌 Notes
-Community reactions reset every 7 days
-Designed with scalability and cost-efficiency in mind
-Focused on local Australian markets
+# [x] iOS only   
+# [x] Minimum iOS version: 14.0   
 
-👤 Author
+---
+
+## 📌 Notes
+
+Community reactions reset every 7 days   
+
+Designed with scalability and cost-efficiency in mind   
+
+Focused on local Australian markets   
+
+
+---
+
+## 👤 Author
+
 Eunbin Jung
+
 Frontend / Mobile Developer
 
 Built with ❤️ using React Native
