@@ -11,15 +11,18 @@ import Tabs from './navigation/Tabs';
 import { NavigationContainer } from '@react-navigation/native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SearchProvider } from './context/SearchContext';
+import { SnackbarProvider } from './context/SnackbarContext';
 
 function App() {
   return (
     <SafeAreaProvider>
       <GestureHandlerRootView className="flex-1" style={{ flex: 1 }}>
         <SearchProvider>
-          <NavigationContainer>
-            <Tabs />
-          </NavigationContainer>
+          <SnackbarProvider>
+            <NavigationContainer>
+              <Tabs />
+            </NavigationContainer>
+          </SnackbarProvider>
         </SearchProvider>
       </GestureHandlerRootView>
     </SafeAreaProvider>

@@ -83,7 +83,7 @@ export function useTopSnackbar(opts?: { durationMs?: number }) {
             borderColor: theme.border,
           }}
         >
-          <Text className="font-semibold" style={{ color: theme.text }}>
+          <Text className="font-semibold text-center" style={{ color: theme.text }}>
             {theme.icon} {snack.message}
           </Text>
         </View>

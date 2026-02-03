@@ -380,6 +380,7 @@ async function importPlaceDetails(placeId, apiKey) {
       types: place.types || [],
       business_status: place.business_status || 'OPERATIONAL',
       source: 'google',
+      website: place.website || '',
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     };

@@ -1,5 +1,5 @@
 import { GOOGLE_MAPS_API_KEY } from '@env';
-import { Alert, View } from 'react-native';
+import { View } from 'react-native';
 import { GooglePlacesAutocomplete } from 'react-native-google-places-autocomplete';
 import { useSearch } from '../../../../context/SearchContext';
 import { useNavigation, NavigationProp } from '@react-navigation/native';
@@ -7,6 +7,8 @@ import {
   getCachedCoordinates,
   cacheCoordinates,
 } from '../../../../utils/placeCoordinatesCache';
+import { useSnackbar } from '../../../../context/SnackbarContext';
+
 
 export type RootStackParamList = {
   MainTabs: { screen: 'Map' | 'Feed' | 'My' };
@@ -16,6 +18,7 @@ export type RootStackParamList = {
 function SearchInput() {
   const { isSearch, setSelectedLocation, setIsSearch } = useSearch();
   const navigation = useNavigation<NavigationProp<RootStackParamList>>();
+  const showSnackbar = useSnackbar();
 
   /**
    * Get coordinates from place_id using Place Details API
@@ -56,10 +59,9 @@ function SearchInput() {
    * Handle Enter key - require selection from Autocomplete
    */
   const handleEnterKey = () => {
-    Alert.alert(
-      '검색 결과를 선택해주세요',
-      '주소를 입력한 후 목록에서 원하는 주소를 선택해주세요.',
-      [{ text: '확인' }],
+    showSnackbar(
+      `After typing an address,\nchoose one from the list.`,
+      'info',
     );
   };
 
@@ -88,7 +90,7 @@ function SearchInput() {
               screen: 'Map',
             });
           } else {
-            Alert.alert('오류', '위치 정보를 가져올 수 없습니다.');
+            showSnackbar('Failed to get location information.', 'error');
           }
         }}
         fetchDetails={false}
