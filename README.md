@@ -7,13 +7,13 @@ Built with **React Native, TypeScript, Firebase**, and **Google Maps APIs**.
 
 <img src="https://github.com/user-attachments/assets/b9094c4e-36ba-4a5e-94bd-7efa3704aa41"  width="200" height="400"/>
 <img src="https://github.com/user-attachments/assets/0eb5b7a1-69f1-4660-8333-32867f5e867c"  width="200" height="400"/>
-<img src="https://github.com/user-attachments/assets/af6016ab-4192-42d5-96f2-3c5759729a87"  width="200" height="400"/>
+<img src="https://github.com/user-attachments/assets/6326da5f-96d7-4b21-bb35-5f987eb387dd"  width="200" height="400"/>
 
+<img src="https://github.com/user-attachments/assets/af6016ab-4192-42d5-96f2-3c5759729a87"  width="200" height="400"/>
 <img src="https://github.com/user-attachments/assets/3f9ebd46-eb61-44e5-b240-ecdbdfdf4a79"  width="200" height="400"/>
 <img src="https://github.com/user-attachments/assets/91937bac-6cf9-4bc2-b57b-19055d2ee1fd"  width="200" height="400"/>
+
 <img src="https://github.com/user-attachments/assets/8f8e9938-5edd-4eb2-bc9e-92891d270d91"  width="200" height="400"/>
-
-
 <img src="https://github.com/user-attachments/assets/cc4a788e-cc0e-478f-a0f8-ce1448b2914b"  width="200" height="400"/>
 <img src="https://github.com/user-attachments/assets/59d922b4-c31c-4237-9085-6e1fce2c1462"  width="200" height="400"/>
 
