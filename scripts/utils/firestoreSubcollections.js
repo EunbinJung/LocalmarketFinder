@@ -24,7 +24,7 @@ async function initializeDetailsInfo(placeId) {
 
   const now = admin.firestore.Timestamp.now();
   const nextResetAt = admin.firestore.Timestamp.fromDate(
-    new Date(Date.now() + 4 * 24 * 60 * 60 * 1000), // 4 days from now
+    new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days from now
   );
 
     const initialInfo = {

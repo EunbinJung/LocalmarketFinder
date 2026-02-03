@@ -2,7 +2,7 @@ import { Image, Text, TouchableOpacity, View } from 'react-native';
 import { Market, useSearch } from '../../../context/SearchContext';
 import { getMarketOpenStatus } from '../../../utils/marketOpenStatus';
 import { getPhotoUrl } from '../../../utils/photoUtils';
-import { useMemo, useEffect } from 'react';
+import { useMemo } from 'react';
 
 interface MarketCardProps {
   market: Market;
@@ -12,31 +12,13 @@ function MarketCard({ market }: MarketCardProps) {
   // All hooks must be called before any early returns
   const { setSelectedMarket } = useSearch();
   
-  // Google Places Photo URL 생성
-  // Support both formats: photos array or direct photo_reference field
+  // Photo URL - prefers Firebase Storage, falls back to Google Places API
   const photoUrl = useMemo(() => {
-    if (!market?.photo_reference) return null;
-    return getPhotoUrl(market.photo_reference, 400);
-  }, [market?.photo_reference]);
-
-  // Debug logging
-  useEffect(() => {
-    if (!market?.name) {
-      console.error('❌ [MarketCard] Market without name:', {
-        place_id: market?.place_id,
-        hasName: !!market?.name,
-        marketKeys: market ? Object.keys(market) : []
-      });
-    }
-  }, [market]);
+    return getPhotoUrl(market?.photo_reference, market?.photo_storage_url, 400);
+  }, [market?.photo_reference, market?.photo_storage_url]);
 
   // Safety check: if market or name is missing, don't render
   if (!market || !market.name) {
-    console.error('❌ [MarketCard] Cannot render - missing market or name:', {
-      hasMarket: !!market,
-      hasName: !!market?.name,
-      place_id: market?.place_id
-    });
     return null;
   }
 
@@ -44,18 +26,12 @@ function MarketCard({ market }: MarketCardProps) {
   const { status, nextOpenText } = openStatus;
   const isOpenNow = status === 'OPEN_NOW';
 
-  // Helper function to get status text
   const getStatusText = () => {
     if (status === 'OPEN_NOW') {
       return 'Market is open now';
     }
     if (status === 'CLOSED') {
-      // If we have next open text, show it
-      if (nextOpenText) {
-        return nextOpenText;
-      }
-      // Otherwise show generic closed message
-      return 'Closed';
+      return nextOpenText || 'Closed';
     }
     if (status === 'INVALID') {
       return 'Opening hours not available';

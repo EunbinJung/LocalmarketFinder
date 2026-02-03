@@ -16,7 +16,8 @@ export interface Market {
   website?: string;
   // Support both formats: photos array (Google Places API) and photo_reference string (Firestore)
   photo_reference?: string; // Direct photo_reference field from Firestore
-    formatted_address?: string;
+  photo_storage_url?: string; // Firebase Storage URL (preferred)
+  formatted_address?: string;
   opening_hours?: {
       periods?: Array<{
         open: { day: number; time: string };
@@ -27,11 +28,73 @@ export interface Market {
   
 }
 
+type LatLng = { lat: number; lng: number };
+
+const SCOPE_RADIUS_OPTIONS_KM = [15, 30, 50, 70, 150] as const;
+type ScopeRadiusKm = (typeof SCOPE_RADIUS_OPTIONS_KM)[number];
+const DEFAULT_SCOPE_RADIUS_KM: ScopeRadiusKm = SCOPE_RADIUS_OPTIONS_KM[0]; // smallest
+
+function isValidLatLng(value: unknown): value is LatLng {
+  if (!value || typeof value !== 'object') return false;
+  const v = value as { lat?: unknown; lng?: unknown };
+  return typeof v.lat === 'number' && typeof v.lng === 'number' && !isNaN(v.lat) && !isNaN(v.lng);
+}
+
+function hasValidMarketCoordinates(market: Market): boolean {
+  const loc = market?.geometry?.location;
+  return (
+    !!loc &&
+    typeof loc.lat === 'number' &&
+    typeof loc.lng === 'number' &&
+    !isNaN(loc.lat) &&
+    !isNaN(loc.lng)
+  );
+}
+
+function haversineDistanceKm(a: LatLng, b: LatLng): number {
+  const toRad = (deg: number) => (deg * Math.PI) / 180;
+  const R = 6371; // km
+  const dLat = toRad(b.lat - a.lat);
+  const dLng = toRad(b.lng - a.lng);
+  const lat1 = toRad(a.lat);
+  const lat2 = toRad(b.lat);
+
+  const sinDLat = Math.sin(dLat / 2);
+  const sinDLng = Math.sin(dLng / 2);
+
+  const h =
+    sinDLat * sinDLat +
+    Math.cos(lat1) * Math.cos(lat2) * (sinDLng * sinDLng);
+
+  return 2 * R * Math.asin(Math.min(1, Math.sqrt(h)));
+}
+
+function getMarketsWithinRadius(
+  allMarkets: Market[],
+  center: LatLng,
+  radiusKm: number,
+): Market[] {
+  const withDistance = allMarkets
+    .filter(hasValidMarketCoordinates)
+    .map(market => ({
+      market,
+      distanceKm: haversineDistanceKm(center, market.geometry!.location),
+    }))
+    .sort((a, b) => a.distanceKm - b.distanceKm);
+
+  if (withDistance.length === 0) return [];
+
+  // Fixed radius scope (user-controlled)
+  return withDistance.filter(x => x.distanceKm <= radiusKm).map(x => x.market);
+}
+
 interface SearchContextType {
   isSearch: boolean;
   setIsSearch: (value: boolean) => void;
   selectedLocation: { lat: number; lng: number } | null;
   setSelectedLocation: (location: { lat: number; lng: number } | null) => void;
+  userLocation: { lat: number; lng: number } | null;
+  setUserLocation: (location: { lat: number; lng: number } | null) => void;
   mapCenter: { lat: number; lng: number } | null;
   setMapCenter: (center: { lat: number; lng: number } | null) => void;
   setFilteredMarkets: (filteredMarkets: Market[]) => void;
@@ -45,6 +108,8 @@ interface SearchContextType {
   savedMarketIds: string[];
   setSavedMarketIds: (ids: string[]) => void;
   refreshSavedMarkets: () => Promise<void>;
+  scopeRadiusKm: ScopeRadiusKm;
+  setScopeRadiusKm: (km: ScopeRadiusKm) => void;
 }
 
 const SearchContext = createContext<SearchContextType | undefined>(undefined);
@@ -55,10 +120,15 @@ export function SearchProvider({ children }: { children: ReactNode }) {
     lat: number;
     lng: number;
   } | null>(null);
+  const [userLocation, setUserLocation] = useState<{
+    lat: number;
+    lng: number;
+  } | null>(null);
   const [mapCenter, setMapCenter] = useState<{
     lat: number;
     lng: number;
   } | null>(null);
+  const [allMarkets, setAllMarkets] = useState<Market[]>([]);
   const [markets, setMarkets] = useState<Market[]>([]);
   const [loading, setLoading] = useState(true); // Start with loading true
   const [filteredMarkets, setFilteredMarketsState] = useState<Market[]>([]);
@@ -72,7 +142,14 @@ export function SearchProvider({ children }: { children: ReactNode }) {
       
       // Filter out invalid markets (missing name or place_id)
       const validMarkets = newMarkets.filter((m) => {
-        return m && m.place_id && m.name;
+        const placeId = (m as any)?.place_id;
+        const name = (m as any)?.name;
+        return (
+          typeof placeId === 'string' &&
+          placeId.length > 0 &&
+          typeof name === 'string' &&
+          name.trim().length > 0
+        );
       });
       
       setFilteredMarketsState(validMarkets);
@@ -84,6 +161,9 @@ export function SearchProvider({ children }: { children: ReactNode }) {
   
   const [selectedMarket, setSelectedMarket] = useState<Market | null>(null);
   const [savedMarketIds, setSavedMarketIds] = useState<string[]>([]);
+  const [scopeRadiusKm, setScopeRadiusKm] = useState<ScopeRadiusKm>(
+    DEFAULT_SCOPE_RADIUS_KM,
+  );
 
   // Load saved markets
   const refreshSavedMarkets = async () => {
@@ -108,8 +188,9 @@ export function SearchProvider({ children }: { children: ReactNode }) {
           getSavedMarkets(),
         ]);
         
-        setMarkets(loadedMarkets);
-        setFilteredMarkets(loadedMarkets);
+        setAllMarkets(loadedMarkets);
+        setMarkets(loadedMarkets); // until we have a center to scope by
+        setFilteredMarkets(loadedMarkets); // until we have a center to scope by
         setSavedMarketIds(savedIds);
       } catch (error) {
         console.error('Error loading data:', error);
@@ -121,6 +202,29 @@ export function SearchProvider({ children }: { children: ReactNode }) {
     loadMarkets();
   }, []);
 
+  // Scope markets by the user's searched location (preferred) or map center (fallback).
+  // This prevents far-away markets from appearing when searching a big city,
+  // while still allowing progressive expansion for small towns.
+  useEffect(() => {
+    if (!isValidLatLng(selectedLocation)) return;
+    if (!Array.isArray(allMarkets) || allMarkets.length === 0) return;
+
+    const scoped = getMarketsWithinRadius(allMarkets, selectedLocation, scopeRadiusKm);
+    setMarkets(scoped);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedLocation, allMarkets, scopeRadiusKm]);
+
+  useEffect(() => {
+    // If user explicitly searched a location, keep scope anchored there.
+    if (selectedLocation) return;
+    if (!isValidLatLng(mapCenter)) return;
+    if (!Array.isArray(allMarkets) || allMarkets.length === 0) return;
+
+    const scoped = getMarketsWithinRadius(allMarkets, mapCenter, scopeRadiusKm);
+    setMarkets(scoped);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mapCenter, selectedLocation, allMarkets, scopeRadiusKm]);
+
   return (
     <SearchContext.Provider
       value={{
@@ -128,6 +232,8 @@ export function SearchProvider({ children }: { children: ReactNode }) {
         setIsSearch,
         selectedLocation,
         setSelectedLocation,
+        userLocation,
+        setUserLocation,
         mapCenter,
         setMapCenter,
         setFilteredMarkets,
@@ -141,6 +247,8 @@ export function SearchProvider({ children }: { children: ReactNode }) {
         savedMarketIds,
         setSavedMarketIds,
         refreshSavedMarkets,
+        scopeRadiusKm,
+        setScopeRadiusKm,
       }}
     >
       {children}

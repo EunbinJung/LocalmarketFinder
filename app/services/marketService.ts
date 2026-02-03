@@ -14,6 +14,7 @@ export interface Market {
   rating?: number;
   user_ratings_total?: number;
   photo_reference?: string;
+  photo_storage_url?: string;
   opening_hours?: {
     periods?: Array<{
     open: { day: number; time: string };

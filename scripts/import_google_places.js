@@ -6,7 +6,18 @@ const admin = require('firebase-admin');
 const axios = require('axios');
 const { initializeFirebaseAdmin } = require('./utils/firebaseAdmin');
 
-async function importGooglePlaces() {
+/**
+ * 2️⃣ Sync Markets (유지보수)
+ * 
+ * 역할: 기존 마켓 데이터 유지보수 / 주기적 업데이트
+ * - Firestore에 존재하는 마켓만 대상으로 실행
+ * - Place Details 호출
+ * - rating, reviews, opening_hours, website 등 업데이트
+ * - 주 1회 또는 월 1회 실행
+ * - 신규 마켓 처리 금지 (discoverAndInitMarkets에서 담당)
+ * - 사진 업로드 제외 (이미 초기화됨)
+ */
+async function syncMarkets() {
   try {
     // Initialize Firebase Admin
     initializeFirebaseAdmin();
@@ -17,7 +28,7 @@ async function importGooglePlaces() {
       throw new Error('GOOGLE_MAPS_API_KEY environment variable is required');
     }
 
-    console.log('🔄 Importing Google Places data...\n');
+    console.log('🔄 Syncing existing markets data...\n');
 
     // Get all markets from Firestore
     const marketsRef = admin.firestore().collection('markets');
@@ -67,11 +78,13 @@ async function importGooglePlaces() {
           updateData.user_ratings_total = placeDetails.user_ratings_total;
         }
 
-        // Update photo_reference (first photo only)
+        // Update photo_reference only (사진 업로드는 discoverAndInitMarkets에서만 수행)
+        // syncMarkets에서는 사진 업로드 제외 (이미 초기화됨)
         if (placeDetails.photos && placeDetails.photos.length > 0) {
           const firstPhoto = placeDetails.photos[0];
           if (firstPhoto.photo_reference) {
             updateData.photo_reference = firstPhoto.photo_reference;
+            // photo_storage_url은 업데이트하지 않음 (초기화 시에만 설정)
           }
         }
 
@@ -104,9 +117,9 @@ async function importGooglePlaces() {
         }
 
         // Update website if available
-if (placeDetails.website) {
-  updateData.website = placeDetails.website;
-}
+        if (placeDetails.website) {
+          updateData.website = placeDetails.website;
+        }
 
         // Only update if there are changes
         if (Object.keys(updateData).length > 0) {
@@ -146,18 +159,18 @@ if (placeDetails.website) {
       await batch.commit();
     }
 
-    console.log(`\n✅ Import complete!`);
+    console.log(`\n✅ Sync complete!`);
     console.log(`   📊 Total processed: ${count}`);
     console.log(`   ✅ Updated: ${updated}`);
     console.log(`   ⏭️  Skipped: ${skipped}`);
   } catch (error) {
-    console.error('❌ Error importing Google Places data:', error);
+    console.error('❌ Error syncing markets:', error);
     throw error;
   }
 }
 
 if (require.main === module) {
-  importGooglePlaces()
+  syncMarkets()
     .then(() => process.exit(0))
     .catch(error => {
       console.error('Error:', error);
@@ -165,4 +178,4 @@ if (require.main === module) {
     });
 }
 
-module.exports = { importGooglePlaces };
+module.exports = { syncMarkets };

@@ -3,6 +3,10 @@ import { Alert, View } from 'react-native';
 import { GooglePlacesAutocomplete } from 'react-native-google-places-autocomplete';
 import { useSearch } from '../../../../context/SearchContext';
 import { useNavigation, NavigationProp } from '@react-navigation/native';
+import {
+  getCachedCoordinates,
+  cacheCoordinates,
+} from '../../../../utils/placeCoordinatesCache';
 
 export type RootStackParamList = {
   MainTabs: { screen: 'Map' | 'Feed' | 'My' };
@@ -13,29 +17,50 @@ function SearchInput() {
   const { isSearch, setSelectedLocation, setIsSearch } = useSearch();
   const navigation = useNavigation<NavigationProp<RootStackParamList>>();
 
-  const handleSearchInput = async (input: string) => {
-    if (!input) return;
-
+  /**
+   * Get coordinates from place_id using Place Details API
+   * Uses cache if available to reduce API calls
+   */
+  const getCoordinatesFromPlaceId = async (
+    placeId: string,
+  ): Promise<{ lat: number; lng: number } | null> => {
+    // Check cache first
+    const cached = await getCachedCoordinates(placeId);
+    if (cached) {
+      return cached;
+    }
+    
+    // Fetch from Place Details API (geometry.location only)
     try {
       const response = await fetch(
-        `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(
-          input,
-        )}&key=${GOOGLE_MAPS_API_KEY}`,
+        `https://maps.googleapis.com/maps/api/place/details/json?place_id=${placeId}&fields=geometry.location&key=${GOOGLE_MAPS_API_KEY}`,
       );
       const data = await response.json();
 
-      if (data.status === 'OK' && data.results.length > 0) {
-        const { lat, lng } = data.results[0].geometry.location;
-        setSelectedLocation({ lat, lng });
-        setIsSearch(false);
-        navigation.navigate('MainTabs', { screen: 'Map' });
-      } else {
-        Alert.alert('검색 결과가 없습니다. 정확한 주소를 입력해주세요.');
+      if (data.status === 'OK' && data.result?.geometry?.location) {
+        const { lat, lng } = data.result.geometry.location;
+        
+        // Cache the coordinates
+        await cacheCoordinates(placeId, lat, lng);
+        
+        return { lat, lng };
       }
-    } catch (err) {
-      console.error(err);
-      Alert.alert('검색 중 오류가 발생했습니다.');
+      return null;
+    } catch (error) {
+      console.error('SearchInput: failed to fetch place details', error);
+      return null;
     }
+  };
+
+  /**
+   * Handle Enter key - require selection from Autocomplete
+   */
+  const handleEnterKey = () => {
+    Alert.alert(
+      '검색 결과를 선택해주세요',
+      '주소를 입력한 후 목록에서 원하는 주소를 선택해주세요.',
+      [{ text: '확인' }],
+    );
   };
 
   return (
@@ -46,23 +71,33 @@ function SearchInput() {
       <GooglePlacesAutocomplete
         placeholder="Search"
         query={{ key: GOOGLE_MAPS_API_KEY, language: 'en', types: 'geocode' }}
-        onPress={(data, details = null) => {
-          if (details?.geometry?.location) {
-            const { lat, lng } = details.geometry.location;
-            setSelectedLocation({ lat, lng });
+        onPress={async (data, _details = null) => {
+          const placeId = data.place_id;
+          
+          if (!placeId) {
+            return;
+          }
+          
+          // Get coordinates from Place Details API (with cache)
+          const coordinates = await getCoordinatesFromPlaceId(placeId);
+          
+          if (coordinates) {
+            setSelectedLocation(coordinates);
             setIsSearch(false);
             navigation.navigate('MainTabs', {
               screen: 'Map',
             });
+          } else {
+            Alert.alert('오류', '위치 정보를 가져올 수 없습니다.');
           }
         }}
-        fetchDetails={true}
+        fetchDetails={false}
         timeout={20000}
         minLength={2}
         predefinedPlaces={[]}
         enableHighAccuracyLocation={true}
         autoFillOnNotFound={true}
-        onFail={error => console.error('Places Error:', error)}
+        onFail={error => console.error('Google Places Autocomplete error:', error)}
         listViewDisplayed={isSearch}
         styles={{
           container: { flex: 1 },
@@ -100,10 +135,7 @@ function SearchInput() {
           placeholderTextColor: 'gray',
           autoFocus: isSearch,
           editable: isSearch,
-          onSubmitEditing: ({ nativeEvent }) => {
-            const input = nativeEvent.text;
-            handleSearchInput(input);
-          },
+          onSubmitEditing: handleEnterKey,
         }}
         debounce={300}
         suppressDefaultStyles={false}

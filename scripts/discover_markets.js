@@ -5,8 +5,16 @@ require('dotenv').config({ path: path.resolve(__dirname, '../.env') });
 const admin = require('firebase-admin');
 const axios = require('axios');
 const { initializeFirebaseAdmin } = require('./utils/firebaseAdmin');
+const { uploadPhotoToStorage } = require('./utils/photoStorage');
 
-async function discoverMarkets() {
+/**
+ * Firebase + Google Places Market Import Script (Discover + Initializer 통합)
+ * 
+ * 목적: 호주 지역 마켓 정보를 Google Places API에서 가져와 Firestore에 저장
+ * - Nearby Search → Place Details 호출 → Firestore 저장까지 한 번에 처리
+ * - Script 3(Sync/Refresh)는 주기적 업데이트용으로 별도 운영
+ */
+async function discoverAndImportMarkets() {
   try {
     // Initialize Firebase Admin
     initializeFirebaseAdmin();
@@ -22,14 +30,20 @@ async function discoverMarkets() {
       // NSW
       { name: 'Sydney', lat: -33.8688, lng: 151.2093 },
       { name: 'Melbourne', lat: -37.8136, lng: 144.9631 },
+      { name: 'Geelong', lat: -38.1499, lng: 144.3617 },
+      { name: 'Wollongong', lat: -34.4250, lng: 150.8900 },
       { name: 'Brisbane', lat: -27.4698, lng: 153.0251 },
+      { name: 'Gold Coast', lat: -28.0167, lng: 153.4000 },
+      { name: 'Sunshine Coast', lat: -26.6500, lng: 153.0667 },
       { name: 'Perth', lat: -31.9505, lng: 115.8605 },
+      { name: 'Fremantle', lat: -32.0569, lng: 115.7439 },
       { name: 'Adelaide', lat: -34.9285, lng: 138.6007 },
       { name: 'Hobart', lat: -42.8821, lng: 147.3272 },
       { name: 'Canberra', lat: -35.2809, lng: 149.1300 },
       { name: 'Darwin', lat: -12.4634, lng: 130.8456 },
       { name: 'Byron Bay', lat: -28.6474, lng: 153.6020 },
-      // Add more cities as needed
+      { name: 'Newcastle', lat: -32.9283, lng: 151.7817 },
+      { name: 'Cairns', lat: -16.9186, lng: 145.7781 },
     ];
 
     console.log('🔍 Discovering local markets from Google Places API...\n');
@@ -39,6 +53,10 @@ async function discoverMarkets() {
     let totalAdded = 0;
     let totalSkipped = 0;
     const allPlaceIds = new Set(); // Track to avoid duplicates
+    
+    // 배치 처리용
+    let batch = admin.firestore().batch();
+    let batchCount = 0;
 
     for (const city of cities) {
       console.log(`\n🏙️  Searching: ${city.name} (${city.lat}, ${city.lng})`);
@@ -50,10 +68,13 @@ async function discoverMarkets() {
       do {
         try {
           // Nearby Search API
+          // Use a more "event market" leaning keyword to reduce grocery/supermarket leakage.
           const searchParams = {
             location: `${city.lat},${city.lng}`,
             radius: 50000, // 50km radius
-            type: 'market',
+            type: 'point_of_interest',
+            keyword:
+              'farmers market community market weekend market night market sunday market friday market saturday market artisan market craft market flea market',
             key: GOOGLE_MAPS_API_KEY,
           };
 
@@ -84,16 +105,29 @@ async function discoverMarkets() {
                   allPlaceIds.add(placeId);
                   totalFound++;
 
-                  // Fetch detailed information
-                  const added = await importPlaceDetails(placeId, GOOGLE_MAPS_API_KEY);
-                  if (added) {
+                  // Fetch detailed information and add to batch
+                  const marketData = await importPlaceDetails(placeId, GOOGLE_MAPS_API_KEY);
+                  if (marketData) {
+                    const marketRef = admin.firestore().collection('markets').doc(placeId);
+                    batch.set(marketRef, marketData, { merge: true });
+                    batchCount++;
                     totalAdded++;
+
+                    // 배치 커밋 (500개 단위)
+                    if (batchCount >= 500) {
+                      await batch.commit();
+                      console.log(`   📦 Committed batch (${totalAdded} added so far)...`);
+                      // 새 배치 생성
+                      const newBatch = admin.firestore().batch();
+                      batch = newBatch;
+                      batchCount = 0;
+                    }
                   } else {
                     totalSkipped++;
                   }
 
-                  // Rate limiting
-                  await new Promise(resolve => setTimeout(resolve, 100));
+                  // Rate limiting: 50ms between requests
+                  await new Promise(resolve => setTimeout(resolve, 50));
                 }
               } else {
                 totalSkipped++;
@@ -107,7 +141,7 @@ async function discoverMarkets() {
             break;
           }
 
-          // Rate limiting between pages
+          // Rate limiting between pages: 2s (Google requirement)
           if (nextPageToken) {
             await new Promise(resolve => setTimeout(resolve, 2000));
           }
@@ -121,6 +155,12 @@ async function discoverMarkets() {
       console.log(`   ✅ ${city.name}: Found ${totalFound} unique markets so far`);
     }
 
+    // Commit remaining batch
+    if (batchCount > 0) {
+      await batch.commit();
+      console.log(`   📦 Committed final batch...`);
+    }
+
     console.log(`\n✅ Discovery complete!`);
     console.log(`   📊 Total found: ${totalFound}`);
     console.log(`   ✅ Added: ${totalAdded}`);
@@ -132,49 +172,146 @@ async function discoverMarkets() {
 }
 
 /**
- * Check if a place is a real local market
- * Filters out supermarkets, community centres, halls, etc.
+ * Keyword-based market filtering
+ * - Exclude hotels, resorts, supermarkets, malls
+ * - Include only real local markets using keyword matching
  */
+// Strong market patterns (event-style markets)
+const STRONG_MARKET_REGEXES = [
+  /\bfarmers?\s+market\b/i,
+  /\bfarmer's\s+market\b/i,
+  /\bcommunity\s+market\b/i,
+  /\bweekend\s+market\b/i,
+  /\bartisan\s+market\b/i,
+  /\bcraft\s+market\b/i,
+  /\bflea\s+market\b/i,
+  /\bvillage\s+market\b/i,
+  /\bgrowers?\s+market\b/i,
+  /\bmakers?\s+market\b/i,
+  /\bhandmade\s+market\b/i,
+  /\bnight\s+market\b/i,
+  /\bsunday\s+market\b/i,
+  /\bsaturday\s+market\b/i,
+  /\bpopup\s+market\b/i,
+  /\bpop-up\s+market\b/i,
+];
+
+// Generic "market(s)" word (word boundary avoids matching "supermarket")
+const MARKET_WORD_REGEX = /\bmarkets?\b/i;
+
+// Grocery / retail chains & patterns to exclude (focus on "market" groceries)
+const GROCERY_NAME_REGEXES = [
+  /\b(supermarket|grocery|grocer|groceries)\b/i,
+  /\b(woolworths|coles|aldi|costco|iga|foodworks|spudshed|drakes|foodland|spar)\b/i,
+  /\b(harris\s*farm)\b/i,
+  /\b(bottle\s*shop|liquor)\b/i,
+  /\b(mini\s*mart|minimart|convenience)\b/i,
+];
+
+const EXCLUDE_KEYWORDS = [
+  'shopping centre',
+  'shopping center',
+  'community_centre',
+  'city_hall',
+  'local_government_office',
+  'mall',
+];
+
+function hasStrongMarketSignal(nameLower) {
+  return STRONG_MARKET_REGEXES.some(r => r.test(nameLower));
+}
+
+function hasMarketWord(nameLower) {
+  return MARKET_WORD_REGEX.test(nameLower);
+}
+
+function looksLikeGroceryName(nameLower) {
+  return GROCERY_NAME_REGEXES.some(r => r.test(nameLower));
+}
+
+function countOpenDaysFromWeekdayText(weekdayText) {
+  if (!Array.isArray(weekdayText)) return null;
+  let openDays = 0;
+  for (const line of weekdayText) {
+    const lower = String(line || '').toLowerCase();
+    if (!lower) continue;
+    if (lower.includes('closed')) continue;
+    openDays += 1;
+  }
+  return openDays;
+}
+
+function looksLikeGroceryFromDetails(place) {
+  const nameLower = (place?.name || '').toLowerCase();
+  const types = (place?.types || []).map(t => String(t).toLowerCase());
+
+  // Always exclude known grocery-like names / chains
+  if (looksLikeGroceryName(nameLower)) return true;
+
+  // Always exclude by types if Google marks it as a supermarket/grocery
+  const groceryTypes = [
+    'grocery_or_supermarket',
+    'supermarket',
+    'convenience_store',
+    'department_store',
+    'liquor_store',
+    'shopping_mall',
+  ];
+  if (groceryTypes.some(t => types.includes(t))) return true;
+
+  // Schedule heuristic: groceries are usually open 6-7 days.
+  // We only apply this when the name is a generic "market" (not strong event market signal).
+  if (hasMarketWord(nameLower) && !hasStrongMarketSignal(nameLower)) {
+    const openDays = countOpenDaysFromWeekdayText(place?.opening_hours?.weekday_text);
+    if (typeof openDays === 'number' && openDays >= 6) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 function isLocalMarket(place) {
   const name = (place.name || '').toLowerCase();
   const types = (place.types || []).map(t => t.toLowerCase());
 
-  // Exclude these types
+  // 1. Exclude by name keywords
+  if (EXCLUDE_KEYWORDS.some(keyword => name.includes(keyword))) {
+    return false;
+  }
+
+  // 2. Exclude by strong grocery-ish name patterns (word-boundary safe)
+  if (looksLikeGroceryName(name)) {
+    return false;
+  }
+
+  // 3. Exclude by place types
   const excludeTypes = [
+    'lodging',
+    'hotel',
+    'shopping_mall',
     'supermarket',
     'grocery_or_supermarket',
-    'shopping_mall',
-    'community_centre',
-    'city_hall',
-    'local_government_office',
+    'convenience_store',
+    'department_store',
+    'liquor_store',
   ];
 
-  // Exclude if has excluded types
   if (excludeTypes.some(type => types.includes(type))) {
     return false;
   }
 
-  // Include if name contains market-related keywords
-  const marketKeywords = [
-    'market',
-    'farmers market',
-    'craft market',
-    'flea market',
-    'artisan market',
-    'producers market',
-    'makers market',
-    'vintage market',
-    'antique market',
-  ];
-
-  const hasMarketKeyword = marketKeywords.some(keyword => name.includes(keyword));
-
-  // Include if it's a market type or has market keyword
-  return types.includes('market') || hasMarketKeyword;
+  // 4. Include only if it looks like a market.
+  // Strong signals first; fallback to generic "market(s)" word.
+  if (hasStrongMarketSignal(name)) return true;
+  return hasMarketWord(name);
 }
 
 /**
- * Import place details into Firestore
+ * Place Details 호출 및 Firestore 저장 데이터 준비
+ * - 신규 마켓만 처리 (이미 존재하면 null 반환)
+ * - 가져오는 필드: name, geometry, types, business_status, rating, user_ratings_total, photos, formatted_address, opening_hours, place_id
+ * - Firestore 저장 데이터 반환 (배치 처리용)
  */
 async function importPlaceDetails(placeId, apiKey) {
   try {
@@ -183,8 +320,8 @@ async function importPlaceDetails(placeId, apiKey) {
     const existingDoc = await marketRef.get();
 
     if (existingDoc.exists) {
-      // Already exists, skip
-      return false;
+      // Already exists, skip (신규 마켓만 처리)
+      return null;
     }
 
     // Fetch place details
@@ -201,16 +338,56 @@ async function importPlaceDetails(placeId, apiKey) {
 
     if (detailsResponse.data.status !== 'OK') {
       console.log(`      ⚠️  ${placeId}: ${detailsResponse.data.status}`);
-      return false;
+      return null;
     }
 
     const place = detailsResponse.data.result;
 
+    // Filter out 24-hour markets
+    if (place.opening_hours && place.opening_hours.weekday_text) {
+      const weekdayText = place.opening_hours.weekday_text;
+      // Check if all days are "Open 24 hours"
+      const is24Hours = weekdayText.every(day => 
+        day.toLowerCase().includes('open 24 hours') || 
+        day.toLowerCase().includes('24 hours')
+      );
+      if (is24Hours) {
+        console.log(`      ⏭️  Skipped (24 hours): ${place.name}`);
+        return null;
+      }
+    }
+
+    // Extra filter: drop grocery-like places that slipped through Nearby Search
+    if (looksLikeGroceryFromDetails(place)) {
+      console.log(`      ⏭️  Skipped (grocery-like): ${place.name}`);
+      return null;
+    }
+
     // Extract city and state from formatted_address
+    // Handle formats like: "123 Street, City Name NSW 2000, Australia" or "City Name NSW 2000"
     const address = place.formatted_address || '';
-    const cityMatch = address.match(/([^,]+),\s*([A-Z]{2,3})\s+\d+/);
-    const city = cityMatch ? cityMatch[1].trim() : null;
-    const state = cityMatch ? cityMatch[2].trim() : null;
+    let city = null;
+    let state = null;
+    
+    // Try multiple patterns to extract city
+    // Pattern 1: "Street, City State Postcode" or "City State Postcode"
+    const cityMatch1 = address.match(/(?:^|,\s*)([^,]+?),\s*([A-Z]{2,3})\s+\d+/);
+    if (cityMatch1) {
+      city = cityMatch1[1].trim();
+      state = cityMatch1[2].trim();
+    } else {
+      // Pattern 2: "City, State" (without postcode)
+      const cityMatch2 = address.match(/(?:^|,\s*)([^,]+?),\s*([A-Z]{2,3})(?:\s|,|$)/);
+      if (cityMatch2) {
+        city = cityMatch2[1].trim();
+        state = cityMatch2[2].trim();
+      }
+    }
+    
+    // Clean up city name (remove common suffixes)
+    if (city) {
+      city = city.replace(/\s+(NSW|VIC|QLD|SA|WA|TAS|ACT|NT)\s*$/, '').trim();
+    }
 
     // Prepare market data
     const marketData = {
@@ -233,6 +410,16 @@ async function importPlaceDetails(placeId, apiKey) {
     }
     if (place.photos && place.photos.length > 0) {
       marketData.photo_reference = place.photos[0].photo_reference;
+      
+      // Upload photo to Firebase Storage (유틸리티 사용)
+      const storageUrl = await uploadPhotoToStorage(
+        place.photos[0].photo_reference,
+        placeId,
+        apiKey,
+      );
+      if (storageUrl) {
+        marketData.photo_storage_url = storageUrl;
+      }
     }
     if (place.formatted_address) {
       marketData.formatted_address = place.formatted_address;
@@ -246,19 +433,18 @@ async function importPlaceDetails(placeId, apiKey) {
       };
     }
 
-    // Save to Firestore
-    await marketRef.set(marketData);
-    console.log(`      ✅ Added: ${place.name} (${city || 'Unknown'})`);
-    return true;
+    console.log(`      ✅ Prepared: ${place.name} (${city || 'Unknown'})`);
+    return marketData;
 
   } catch (error) {
     console.error(`      ❌ Error importing ${placeId}:`, error.message);
-    return false;
+    return null;
   }
 }
 
+// Main 실행
 if (require.main === module) {
-  discoverMarkets()
+  discoverAndImportMarkets()
     .then(() => process.exit(0))
     .catch(error => {
       console.error('Error:', error);
@@ -266,4 +452,4 @@ if (require.main === module) {
     });
 }
 
-module.exports = { discoverMarkets };
+module.exports = { discoverAndImportMarkets };

@@ -2,7 +2,7 @@
 /**
  * Cloud Functions for Market Reaction Cycle Reset
  *
- * This function runs on a schedule to reset reaction counts every 4 days.
+ * This function runs on a schedule to reset reaction counts every 7 days.
  *
  * ⚠️ IMPORTANT: This function does NOT modify the Firestore document structure.
  * It only updates the values within the existing structure.
@@ -17,7 +17,7 @@ if (admin.apps.length === 0) {
 }
 const db = admin.firestore();
 /**
- * Scheduled function to reset reaction cycles every 4 days
+ * Scheduled function to reset reaction cycles every 7 days
  *
  * Trigger: Runs periodically (configure in Firebase Console)
  *
@@ -105,38 +105,85 @@ exports.resetReactionCycles = functions.pubsub
                 const fieldData = infoData[fieldName];
                 if (!fieldData)
                     continue;
-                // Handle both formats: {Yes, No} and {yes, no}
-                const yesCount = (_b = (_a = fieldData.Yes) !== null && _a !== void 0 ? _a : fieldData.yes) !== null && _b !== void 0 ? _b : 0;
-                const noCount = (_d = (_c = fieldData.No) !== null && _c !== void 0 ? _c : fieldData.no) !== null && _d !== void 0 ? _d : 0;
-                // Check if all counts are already 0
-                if (yesCount === 0 && noCount === 0) {
-                    console.log(`  ⏭️ Field ${fieldName}: already zero, skipping update`);
-                    continue;
+                if (fieldName === 'parking') {
+                    const freeCount = fieldData.Free ?? 0;
+                    const paidCount = fieldData.Paid ?? 0;
+                    const streetCount = fieldData.Street ?? 0;
+                    const total = freeCount + paidCount + streetCount;
+                    if (total === 0) {
+                        console.log(`  ⏭️ Field ${fieldName}: already zero, skipping update`);
+                        continue;
+                    }
+                    hasChanges = true;
+                    const previousCyclePath = `previousCycle.${fieldName}`;
+                    updateData[previousCyclePath] = {
+                        Free: freeCount,
+                        Paid: paidCount,
+                        Street: streetCount,
+                    };
+                    updateData[`${fieldName}.Free`] = 0;
+                    updateData[`${fieldName}.Paid`] = 0;
+                    updateData[`${fieldName}.Street`] = 0;
+                    console.log(`  ✅ Field ${fieldName}: Free=${freeCount}, Paid=${paidCount}, Street=${streetCount} → previousCycle`);
                 }
-                hasChanges = true;
-                // Copy current counts to previousCycle
-                const previousCyclePath = `previousCycle.${fieldName}`;
-                updateData[previousCyclePath] = {
-                    Yes: yesCount,
-                    No: noCount,
-                };
-                // Reset current counts to 0
-                updateData[`${fieldName}.Yes`] = 0;
-                updateData[`${fieldName}.No`] = 0;
-                console.log(`  ✅ Field ${fieldName}: ${yesCount} Yes, ${noCount} No → previousCycle`);
+                else {
+                    // Handle both formats: {Yes, No} and {yes, no}
+                    const yesCount = (_b = (_a = fieldData.Yes) !== null && _a !== void 0 ? _a : fieldData.yes) !== null && _b !== void 0 ? _b : 0;
+                    const noCount = (_d = (_c = fieldData.No) !== null && _c !== void 0 ? _c : fieldData.no) !== null && _d !== void 0 ? _d : 0;
+                    if (yesCount === 0 && noCount === 0) {
+                        console.log(`  ⏭️ Field ${fieldName}: already zero, skipping update`);
+                        continue;
+                    }
+                    hasChanges = true;
+                    const previousCyclePath = `previousCycle.${fieldName}`;
+                    updateData[previousCyclePath] = {
+                        Yes: yesCount,
+                        No: noCount,
+                    };
+                    updateData[`${fieldName}.Yes`] = 0;
+                    updateData[`${fieldName}.No`] = 0;
+                    console.log(`  ✅ Field ${fieldName}: ${yesCount} Yes, ${noCount} No → previousCycle`);
+                }
             }
-            // Update cycle timestamps
+            // Always advance the cycle when due (even if counts are already zero)
+            updateData['cycle.lastResetAt'] = now;
+            updateData['cycle.nextResetAt'] = admin.firestore.Timestamp.fromMillis(nowMillis + 7 * 24 * 60 * 60 * 1000);
+            updateData['lastUpdated'] = now;
+            await infoRef.update(updateData);
+            // Reset per-market userReactions + user-centric index for this market
+            const userReactionsRef = infoRef.collection('userReactions');
+            const userReactionsSnapshot = await userReactionsRef.get();
+            if (!userReactionsSnapshot.empty) {
+                let batch = db.batch();
+                let opCount = 0;
+                for (const userDoc of userReactionsSnapshot.docs) {
+                    batch.delete(userDoc.ref);
+                    opCount++;
+                    const uid = userDoc.id;
+                    const userIndexRef = db
+                        .collection('userReactions')
+                        .doc(uid)
+                        .collection('reactions')
+                        .doc(placeId);
+                    batch.delete(userIndexRef);
+                    opCount++;
+                    if (opCount >= 450) {
+                        await batch.commit();
+                        batch = db.batch();
+                        opCount = 0;
+                    }
+                }
+                if (opCount > 0) {
+                    await batch.commit();
+                }
+                console.log(`  ✅ Deleted ${userReactionsSnapshot.size} per-market user reactions + cleared user indexes`);
+            }
+            resetCount++;
             if (hasChanges) {
-                updateData['cycle.lastResetAt'] = now;
-                updateData['cycle.nextResetAt'] = admin.firestore.Timestamp.fromMillis(nowMillis + 4 * 24 * 60 * 60 * 1000);
-                updateData['lastUpdated'] = now;
-                await infoRef.update(updateData);
-                resetCount++;
-                console.log(`  ✅ Reset complete for ${placeId}`);
+                console.log(`  ✅ Reset counts + advanced cycle for ${placeId}`);
             }
             else {
-                console.log(`  ⏭️ No changes needed for ${placeId} (all counts already zero)`);
-                skippedCount++;
+                console.log(`  ✅ Advanced cycle for ${placeId} (counts already zero)`);
             }
         }
         console.log(`✅ Cycle reset complete: ${resetCount} markets reset, ${skippedCount} skipped`);

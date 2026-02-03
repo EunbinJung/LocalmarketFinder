@@ -1,7 +1,7 @@
 import {
   doc,
   getDoc,
-  updateDoc,
+  setDoc,
   increment,
   Timestamp,
   runTransaction,
@@ -44,40 +44,45 @@ export async function updateReactionInFirestore(
   try {
     const infoRef = doc(db, 'markets', placeId, 'details', 'info');
 
-    // Get current counts
+    // updateDoc fails if the doc doesn't exist, and nested field updates can conflict.
+    // Compute next counts and write with setDoc(merge).
     const infoDoc = await getDoc(infoRef);
-    const currentData = infoDoc.exists()
-      ? (infoDoc.data() as MarketInfoData)
-      : {};
+    const currentData = infoDoc.exists() ? (infoDoc.data() as any) : {};
+    const currentCounts = (currentData?.[fieldName] as any) || {};
 
-    // Update counts based on previous and new reaction
-    const updates: any = {};
+    const currentYes =
+      typeof currentCounts?.yes === 'number'
+        ? currentCounts.yes
+        : typeof currentCounts?.Yes === 'number'
+          ? currentCounts.Yes
+          : 0;
+    const currentNo =
+      typeof currentCounts?.no === 'number'
+        ? currentCounts.no
+        : typeof currentCounts?.No === 'number'
+          ? currentCounts.No
+          : 0;
 
-    // Remove previous reaction
-    if (previousReaction === 'yes') {
-      updates[`${fieldName}.yes`] = increment(-1);
-    } else if (previousReaction === 'no') {
-      updates[`${fieldName}.no`] = increment(-1);
-    }
+    let nextYes = currentYes;
+    let nextNo = currentNo;
 
-    // Add new reaction
-    if (reaction === 'yes') {
-      updates[`${fieldName}.yes`] = increment(1);
-    } else if (reaction === 'no') {
-      updates[`${fieldName}.no`] = increment(1);
-    }
+    if (previousReaction === 'yes') nextYes = Math.max(0, nextYes - 1);
+    if (previousReaction === 'no') nextNo = Math.max(0, nextNo - 1);
 
-    // Ensure field exists
-    if (!currentData[fieldName]) {
-      updates[fieldName] = {
-        yes: reaction === 'yes' ? 1 : 0,
-        no: reaction === 'no' ? 1 : 0,
-      };
-    }
+    if (reaction === 'yes') nextYes += 1;
+    if (reaction === 'no') nextNo += 1;
 
-    updates.lastUpdated = Timestamp.now();
-
-    await updateDoc(infoRef, updates);
+    await setDoc(
+      infoRef,
+      {
+        lastUpdated: Timestamp.now(),
+        [fieldName]: {
+          yes: nextYes,
+          no: nextNo,
+        },
+      },
+      { merge: true },
+    );
   } catch (error) {
     console.error('Error updating reaction in Firestore:', error);
     throw error;
@@ -181,6 +186,8 @@ export async function updateReactionWithTransaction(
         'userReactions',
         userId,
       );
+      // User-centric "my activity" index (so we can show My → Reactions without scanning all markets)
+      const userActivityRef = doc(db, 'userReactions', userId, 'reactions', placeId);
 
       // Read both documents
       const infoDoc = await transaction.get(infoRef);
@@ -206,53 +213,68 @@ export async function updateReactionWithTransaction(
 
       // Special handling for parking field
       if (fieldName === 'parking') {
-        // Decrement previous reaction (if exists)
-        if (previousValue === 'Free' || previousValue === 'Paid' || previousValue === 'Street') {
-          infoUpdates[`${fieldName}.${previousValue}`] = increment(-1);
-        }
+        const hasField = !!infoData[fieldName];
 
-        // Increment new reaction (if not null)
-        if (firestoreValue === 'Free' || firestoreValue === 'Paid' || firestoreValue === 'Street') {
-          infoUpdates[`${fieldName}.${firestoreValue}`] = increment(1);
-        }
-
-        // Ensure field structure exists
-        if (!infoData[fieldName]) {
+        if (!hasField) {
+          // First-time init: create the object (no nested increments to avoid conflicts)
           infoUpdates[fieldName] = {
             Free: firestoreValue === 'Free' ? 1 : 0,
             Paid: firestoreValue === 'Paid' ? 1 : 0,
             Street: firestoreValue === 'Street' ? 1 : 0,
             lastUpdated: Timestamp.now(),
           };
+        } else {
+          // Decrement previous reaction (if exists)
+          if (
+            previousValue === 'Free' ||
+            previousValue === 'Paid' ||
+            previousValue === 'Street'
+          ) {
+            infoUpdates[`${fieldName}.${previousValue}`] = increment(-1);
+          }
+
+          // Increment new reaction (if not null)
+          if (
+            firestoreValue === 'Free' ||
+            firestoreValue === 'Paid' ||
+            firestoreValue === 'Street'
+          ) {
+            infoUpdates[`${fieldName}.${firestoreValue}`] = increment(1);
+          }
+
+          infoUpdates[`${fieldName}.lastUpdated`] = Timestamp.now();
         }
       } else {
-        // Other fields: Yes/No format
-        // Decrement previous reaction (if exists)
-        if (previousValue === 'Yes') {
-          infoUpdates[`${fieldName}.Yes`] = increment(-1);
-        } else if (previousValue === 'No') {
-          infoUpdates[`${fieldName}.No`] = increment(-1);
-        }
+        const hasField = !!infoData[fieldName];
 
-        // Increment new reaction (if not null)
-        if (firestoreValue === 'Yes') {
-          infoUpdates[`${fieldName}.Yes`] = increment(1);
-        } else if (firestoreValue === 'No') {
-          infoUpdates[`${fieldName}.No`] = increment(1);
-        }
-
-        // Ensure field structure exists
-        if (!infoData[fieldName]) {
+        if (!hasField) {
+          // First-time init: create the object (no nested increments to avoid conflicts)
           infoUpdates[fieldName] = {
             Yes: firestoreValue === 'Yes' ? 1 : 0,
             No: firestoreValue === 'No' ? 1 : 0,
             lastUpdated: Timestamp.now(),
           };
+        } else {
+          // Decrement previous reaction (if exists)
+          if (previousValue === 'Yes') {
+            infoUpdates[`${fieldName}.Yes`] = increment(-1);
+          } else if (previousValue === 'No') {
+            infoUpdates[`${fieldName}.No`] = increment(-1);
+          }
+
+          // Increment new reaction (if not null)
+          if (firestoreValue === 'Yes') {
+            infoUpdates[`${fieldName}.Yes`] = increment(1);
+          } else if (firestoreValue === 'No') {
+            infoUpdates[`${fieldName}.No`] = increment(1);
+          }
+
+          infoUpdates[`${fieldName}.lastUpdated`] = Timestamp.now();
         }
       }
 
-      // Update info document
-      transaction.update(infoRef, infoUpdates);
+      // Update info document (create if missing)
+      transaction.set(infoRef, infoUpdates, { merge: true });
 
       // Update userReactions document
       const userReactionData: any = {
@@ -271,6 +293,29 @@ export async function updateReactionWithTransaction(
         // Create new document
         transaction.set(userReactionRef, userReactionData);
       }
+
+      // Also upsert user-centric reaction snapshot.
+      // Store a simple, display-friendly value:
+      // - parking: 'Free' | 'Paid' | 'Street' | null
+      // - others: 'yes' | 'no' | null
+      const legacyValue =
+        fieldName === 'parking'
+          ? reaction === 'Free' || reaction === 'Paid' || reaction === 'Street'
+            ? reaction
+            : null
+          : reaction === 'yes' || reaction === 'no'
+            ? reaction
+            : null;
+
+      transaction.set(
+        userActivityRef,
+        {
+          placeId,
+          updatedAt: Timestamp.now(),
+          [fieldName]: legacyValue,
+        },
+        { merge: true },
+      );
     });
   } catch (error) {
     console.error('Error updating reaction with transaction:', error);

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import {
   Modal,
   View,
@@ -9,6 +9,7 @@ import {
   TextInput,
   ActivityIndicator,
   KeyboardAvoidingView,
+  Keyboard,
   Platform,
   FlatList,
   Alert,
@@ -35,10 +36,12 @@ const CommentInputComponent = ({
   onSubmit,
   onCancel,
   loading,
+  onFocusInput,
 }: {
   onSubmit: (text: string) => void;
   onCancel: () => void;
   loading: boolean;
+  onFocusInput?: () => void;
 }) => {
   const [commentText, setCommentText] = useState('');
 
@@ -58,6 +61,7 @@ const CommentInputComponent = ({
         multiline
         className="bg-white border border-gray-300 rounded-lg p-3 text-gray-700 min-h-[80px] mb-3"
         editable={!loading}
+        onFocus={() => onFocusInput?.()}
       />
       <View className="flex-row gap-2">
         <TouchableOpacity
@@ -166,8 +170,28 @@ function MarketDetailModal() {
   const [hasMoreComments, setHasMoreComments] = useState(true);
   const [isSaved, setIsSaved] = useState(false);
   const [checkingSaved, setCheckingSaved] = useState(false);
+  const [savedStatusPlaceId, setSavedStatusPlaceId] = useState<string | null>(null);
+  const [savingSavedState, setSavingSavedState] = useState(false);
   const saveAnimation = useState(new Animated.Value(0))[0];
   const insets = useSafeAreaInsets();
+  const detailsScrollRef = useRef<ScrollView>(null);
+
+  const scrollCommentsIntoView = useCallback((opts?: { animated?: boolean }) => {
+    const animated = opts?.animated ?? true;
+    // Let layout/keyboard settle, then scroll so the input isn't hidden.
+    // (One frame is sometimes not enough on iOS; do a small retry.)
+    requestAnimationFrame(() => {
+      detailsScrollRef.current?.scrollToEnd({ animated });
+      requestAnimationFrame(() => {
+        detailsScrollRef.current?.scrollToEnd({ animated });
+      });
+      if (Platform.OS === 'ios') {
+        setTimeout(() => {
+          detailsScrollRef.current?.scrollToEnd({ animated });
+        }, 120);
+      }
+    });
+  }, []);
 
   const loadMarketDetails = async () => {
     if (!selectedMarket) return;
@@ -184,10 +208,10 @@ function MarketDetailModal() {
 
    // Google Maps reviews link
    const openGoogleMapsReviews = () => {
-    if (!selectedMarket?.place_id) return;
-    
-    // Google Maps place URL with place_id
-    const url = `https://www.google.com/maps/place/?q=place_id:${selectedMarket.place_id}`;
+    if (!selectedMarket?.name) return;
+    const url = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
+      selectedMarket.name,
+    )}`;
     
     Linking.openURL(url).catch(err => {
       console.error('Error opening Google Maps:', err);
@@ -199,8 +223,9 @@ function MarketDetailModal() {
   const openGoogleMapsDirections = () => {
     if (!selectedMarket?.name) return;
     
-    // Google Maps directions URL with place_id
-    const url = `https://www.google.com/maps/dir/?api=1&destination=place_id:${selectedMarket.name}`;
+    const url = `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(
+      selectedMarket.name,
+    )}`;
     
     Linking.openURL(url).catch(err => {
       console.error('Error opening Google Maps:', err);
@@ -240,23 +265,52 @@ function MarketDetailModal() {
     if (selectedMarket) {
       loadMarketDetails();
       loadComments(true);
-      checkSavedStatus();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedMarket]);
 
-  const checkSavedStatus = async () => {
-    if (!selectedMarket) return;
+  // When the comment input is visible, ensure keyboard show doesn't cover it.
+  useEffect(() => {
+    if (!showCommentInput) return;
+    const eventName = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const sub = Keyboard.addListener(eventName, () => {
+      scrollCommentsIntoView({ animated: true });
+    });
+    return () => {
+      sub.remove();
+    };
+  }, [showCommentInput, scrollCommentsIntoView]);
+
+  // Saved status can lag when switching markets quickly.
+  // Track which placeId the current `isSaved` value belongs to and show a loader until it matches.
+  useEffect(() => {
+    if (!selectedMarket?.place_id) return;
+    let cancelled = false;
+    const placeId = selectedMarket.place_id;
+
     setCheckingSaved(true);
-    try {
-      const saved = await isMarketSaved(selectedMarket.place_id);
-      setIsSaved(saved);
-    } catch (error) {
-      console.error('Error checking saved status:', error);
-    } finally {
-      setCheckingSaved(false);
-    }
-  };
+    setSavedStatusPlaceId(null);
+
+    (async () => {
+      try {
+        const saved = await isMarketSaved(placeId);
+        if (cancelled) return;
+        setIsSaved(saved);
+        setSavedStatusPlaceId(placeId);
+      } catch (error) {
+        console.error('Error checking saved status:', error);
+        if (cancelled) return;
+        setIsSaved(false);
+        setSavedStatusPlaceId(placeId);
+      } finally {
+        if (!cancelled) setCheckingSaved(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedMarket?.place_id]);
 
 
   const handleAddComment = async (commentText: string) => {
@@ -296,11 +350,14 @@ function MarketDetailModal() {
   };
 
   const handleSave = async () => {
-    if (!selectedMarket || checkingSaved) return;
+    if (!selectedMarket || checkingSaved || savingSavedState) return;
+    // Prevent toggling while saved status is still resolving for the currently selected market
+    if (savedStatusPlaceId !== selectedMarket.place_id) return;
 
     const previousSavedState = isSaved;
     
     try {
+      setSavingSavedState(true);
       // Optimistic update
       setIsSaved(!previousSavedState);
 
@@ -330,13 +387,15 @@ function MarketDetailModal() {
       // Revert optimistic update
       setIsSaved(previousSavedState);
       Alert.alert('Error', 'Failed to save market. Please try again.');
+    } finally {
+      setSavingSavedState(false);
     }
   };
 
   const marketWithDetails = selectedMarket as any;
   // Support both formats: photos array or direct photo_reference field
   const photoReference = marketWithDetails?.photos?.[0]?.photo_reference || marketWithDetails?.photo_reference;
-  const photoUrl = photoReference ? getPhotoUrl(photoReference, 800) : null;
+  const photoUrl = getPhotoUrl(photoReference, marketWithDetails?.photo_storage_url, 800);
 
   const weeklySchedule = getWeeklySchedule(
     marketWithDetails?.opening_hours?.periods,
@@ -344,15 +403,38 @@ function MarketDetailModal() {
 
   const saveButtonBackgroundColor = saveAnimation.interpolate({
     inputRange: [0, 1],
-    outputRange: ['#FFFFFF', '#FF8A65'],
+    outputRange: ['#FFFFFF', '#E69DB8'],
   });
 
   const saveButtonTextColor = saveAnimation.interpolate({
     inputRange: [0, 1],
-    outputRange: ['#FF8A65', '#FFFFFF'],
+    outputRange: ['#E69DB8', '#FFFFFF'],
   });
 
   if (!selectedMarket) return null;
+
+  const isSavedStatusLoading =
+    checkingSaved || savedStatusPlaceId !== selectedMarket.place_id;
+  const saveButtonLoading = isSavedStatusLoading || savingSavedState;
+  const saveButtonDisabled = saveButtonLoading;
+
+  const saveButtonLabel = savingSavedState
+    ? ''
+    : isSavedStatusLoading
+      ? ''
+      : isSaved
+        ? 'Saved'
+        : 'Save';
+
+  const saveButtonBaseStyle = (() => {
+    if (saveButtonLoading) {
+      return { backgroundColor: '#F3F4F6', borderColor: '#E5E7EB', textColor: '#6B7280' };
+    }
+    if (isSaved) {
+      return { backgroundColor: '#E69DB8', borderColor: '#E69DB8', textColor: '#FFFFFF' };
+    }
+    return { backgroundColor: '#FFFFFF', borderColor: '#E69DB8', textColor: '#E69DB8' };
+  })();
 
   return (
     <Modal
@@ -374,29 +456,46 @@ function MarketDetailModal() {
             <View className="flex-row gap-3">
               <TouchableOpacity
                 onPress={handleSave}
+                disabled={saveButtonDisabled}
+                activeOpacity={0.85}
                 className="px-5 py-2.5 rounded-full"
-                style={{ overflow: 'hidden', backgroundColor: isSaved ? '#E69DB8' : '#FFFFFF', borderWidth: 2, borderColor: '#E69DB8' }}
+                style={{
+                  overflow: 'hidden',
+                  backgroundColor: saveButtonBaseStyle.backgroundColor,
+                  borderWidth: 2,
+                  borderColor: saveButtonBaseStyle.borderColor,
+                }}
               >
-                <Animated.View
-                  style={{
-                    position: 'absolute',
-                    top: 0,
-                    left: 0,
-                    right: 0,
-                    bottom: 0,
-                    backgroundColor: saveButtonBackgroundColor,
-                  }}
-                />
-                <Animated.Text
-                  className="font-semibold text-sm"
-                  style={{
-                    color: saveButtonTextColor,
-                    position: 'relative',
-                    zIndex: 1,
-                  }}
+                {!saveButtonLoading && (
+                  <Animated.View
+                    style={{
+                      position: 'absolute',
+                      top: 0,
+                      left: 0,
+                      right: 0,
+                      bottom: 0,
+                      backgroundColor: saveButtonBackgroundColor,
+                    }}
+                  />
+                )}
+
+                <View
+                  className="flex-row items-center justify-center"
+                  style={{ position: 'relative', zIndex: 1 }}
                 >
-                  {isSaved ? 'Saved' : 'Save'}
-                </Animated.Text>
+                  {saveButtonLoading ? (
+                    <ActivityIndicator size="small" color={saveButtonBaseStyle.textColor} />
+                  ) : (
+                    <Animated.Text
+                      className="font-semibold text-sm"
+                      style={{
+                        color: saveButtonTextColor,
+                      }}
+                    >
+                      {saveButtonLabel}
+                    </Animated.Text>
+                  )}
+                </View>
               </TouchableOpacity>
               <TouchableOpacity
                 onPress={() => setSelectedMarket(null)}
@@ -413,7 +512,12 @@ function MarketDetailModal() {
             </View>
           ) : (
             <View className="flex-1">
-              <ScrollView className="flex-1 px-5" showsVerticalScrollIndicator={false}>
+              <ScrollView
+                ref={detailsScrollRef}
+                className="flex-1 px-5"
+                showsVerticalScrollIndicator={false}
+                keyboardShouldPersistTaps="handled"
+              >
                 {/* Photo */}
                 {photoUrl ? (
                   <View className="mt-5 mb-5 rounded-3xl overflow-hidden" style={{ shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.1, shadowRadius: 12, elevation: 5 }}>
@@ -578,7 +682,13 @@ function MarketDetailModal() {
                       </Text>
                     </View>
                     <TouchableOpacity
-                      onPress={() => setShowCommentInput(!showCommentInput)}
+                      onPress={() => {
+                        const next = !showCommentInput;
+                        setShowCommentInput(next);
+                        if (next) {
+                          scrollCommentsIntoView();
+                        }
+                      }}
                       className="px-4 py-2 bg-primary rounded-full"
                       style={{ shadowColor: '#E69DB8', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.3, shadowRadius: 4, elevation: 3 }}
                     >
@@ -594,6 +704,7 @@ function MarketDetailModal() {
                         onSubmit={handleAddComment}
                         onCancel={() => setShowCommentInput(false)}
                         loading={submittingComment}
+                        onFocusInput={() => scrollCommentsIntoView()}
                       />
                     </View>
                   )}

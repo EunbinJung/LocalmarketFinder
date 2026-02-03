@@ -1,7 +1,7 @@
 /**
  * Cloud Functions for Market Reaction Cycle Reset
  * 
- * This function runs on a schedule to reset reaction counts every 4 days.
+ * This function runs on a schedule to reset reaction counts every 7 days.
  * 
  * ⚠️ IMPORTANT: This function does NOT modify the Firestore document structure.
  * It only updates the values within the existing structure.
@@ -18,7 +18,7 @@ if (admin.apps.length === 0) {
 const db = admin.firestore();
 
 /**
- * Scheduled function to reset reaction cycles every 4 days
+ * Scheduled function to reset reaction cycles every 7 days
  * 
  * Trigger: Runs periodically (configure in Firebase Console)
  * 
@@ -189,34 +189,60 @@ export const resetReactionCycles = functions.pubsub
           }
         }
 
-        // Update cycle timestamps
-        if (hasChanges) {
-          updateData['cycle.lastResetAt'] = now;
-          updateData['cycle.nextResetAt'] = admin.firestore.Timestamp.fromMillis(
-            nowMillis + 4 * 24 * 60 * 60 * 1000, // 4 days in milliseconds
-          );
-          updateData['lastUpdated'] = now;
+        // Always advance the cycle when due (even if counts are already zero)
+        updateData['cycle.lastResetAt'] = now;
+        updateData['cycle.nextResetAt'] = admin.firestore.Timestamp.fromMillis(
+          nowMillis + 7 * 24 * 60 * 60 * 1000, // 7 days in milliseconds
+        );
+        updateData['lastUpdated'] = now;
 
-          await infoRef.update(updateData);
-          
-          // Reset userReactions subcollection (delete all user reaction documents)
-          const userReactionsRef = infoRef.collection('userReactions');
-          const userReactionsSnapshot = await userReactionsRef.get();
-          
-          if (!userReactionsSnapshot.empty) {
-            const batch = db.batch();
-            userReactionsSnapshot.docs.forEach((doc) => {
-              batch.delete(doc.ref);
-            });
-            await batch.commit();
-            console.log(`  ✅ Deleted ${userReactionsSnapshot.size} user reaction documents`);
+        await infoRef.update(updateData);
+
+        // Reset per-market userReactions + user-centric index for this market
+        const userReactionsRef = infoRef.collection('userReactions');
+        const userReactionsSnapshot = await userReactionsRef.get();
+
+        if (!userReactionsSnapshot.empty) {
+          // Firestore batch limit is 500; keep a safe margin.
+          let batch = db.batch();
+          let opCount = 0;
+
+          for (const userDoc of userReactionsSnapshot.docs) {
+            // 1) delete markets/{placeId}/details/info/userReactions/{uid}
+            batch.delete(userDoc.ref);
+            opCount++;
+
+            // 2) delete userReactions/{uid}/reactions/{placeId} (My → Reactions index)
+            const uid = userDoc.id;
+            const userIndexRef = db
+              .collection('userReactions')
+              .doc(uid)
+              .collection('reactions')
+              .doc(placeId);
+            batch.delete(userIndexRef);
+            opCount++;
+
+            if (opCount >= 450) {
+              await batch.commit();
+              batch = db.batch();
+              opCount = 0;
+            }
           }
-          
-          resetCount++;
-          console.log(`  ✅ Reset complete for ${placeId}`);
+
+          if (opCount > 0) {
+            await batch.commit();
+          }
+
+          console.log(
+            `  ✅ Deleted ${userReactionsSnapshot.size} per-market user reactions + cleared user indexes`,
+          );
+        }
+
+        resetCount++;
+        if (hasChanges) {
+          console.log(`  ✅ Reset counts + advanced cycle for ${placeId}`);
         } else {
-          console.log(`  ⏭️ No changes needed for ${placeId} (all counts already zero)`);
-          skippedCount++;
+          console.log(`  ✅ Advanced cycle for ${placeId} (counts already zero)`);
         }
       }
 

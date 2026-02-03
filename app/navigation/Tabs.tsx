@@ -4,12 +4,16 @@ import MapScreen from '../screens/MapScreen';
 import FeedScreen from '../screens/FeedScreen';
 import MyScreen from '../screens/MyScreen';
 import SearchScreen from '../screens/SearchScreen';
+import { useSearch } from '../context/SearchContext';
 
 import MapIcon from '../assets/icons/map.svg';
 import FeedIcon from '../assets/icons/feed.svg';
 import MyIcon from '../assets/icons/profile.svg';
 
 function Tabs() {
+  const { savedMarketIds } = useSearch();
+  const savedCount = savedMarketIds.length;
+
   const Tab = createBottomTabNavigator();
   const Stack = createNativeStackNavigator();
 
@@ -40,8 +44,8 @@ function Tabs() {
               name="Feed"
               component={FeedScreen}
               options={{
-                title: 'Feed',
-                tabBarBadge: 3,
+                title: 'Alerts',
+                tabBarBadge: savedCount > 0 ? savedCount : undefined,
                 tabBarActiveTintColor: '#E69DB8',
                 tabBarInactiveTintColor: 'gray',
                 tabBarIcon: ({ size }) => (

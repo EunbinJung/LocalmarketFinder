@@ -129,7 +129,7 @@ export async function getMarketDetails(
   } catch (error: any) {
     // Handle offline errors gracefully
     if (error?.code === 'unavailable' || error?.message?.includes('offline')) {
-      console.warn('⚠️ 오프라인 상태: 마켓 상세 정보를 가져올 수 없습니다.');
+      console.warn('오프라인 상태: 마켓 상세 정보를 가져올 수 없습니다.');
       return null;
     }
     console.error('Error getting market details:', error);
@@ -262,7 +262,7 @@ export async function getMarketComments(
   } catch (error: any) {
     // Handle offline errors gracefully
     if (error?.code === 'unavailable' || error?.message?.includes('offline')) {
-      console.warn('⚠️ 오프라인 상태: 댓글을 가져올 수 없습니다.');
+      console.warn('오프라인 상태: 댓글을 가져올 수 없습니다.');
       return [];
     }
     console.error('Error getting comments:', error);

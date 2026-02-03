@@ -38,14 +38,10 @@ const validateFirebaseConfig = () => {
 
   if (missingVars.length > 0) {
     console.error(
-      `❌ Firebase 설정 오류: 다음 환경 변수가 설정되지 않았습니다: ${missingVars.join(', ')}`,
+      `Firebase config missing: ${missingVars.join(', ')}`,
     );
-    console.error('⚠️ .env 파일을 확인하고 Firebase 설정을 완료하세요.');
-    console.error('📝 GoogleService-Info.plist의 값을 .env 파일에 입력하세요.');
-    // 개발 환경에서는 경고만 출력하고 계속 진행 (선택사항)
-    // 프로덕션에서는 반드시 에러를 던져야 함
     if (__DEV__) {
-      console.warn('⚠️ 개발 모드: Firebase 설정이 완전하지 않을 수 있습니다.');
+      console.warn('DEV: Firebase config may be incomplete.');
     }
     throw new Error(
       `Missing Firebase configuration: ${missingVars.join(', ')}`,
@@ -84,10 +80,10 @@ if (getApps().length === 0) {
 
     // Anonymous Authentication 자동 로그인
     signInAnonymously(auth).catch(error => {
-      console.error('❌ Anonymous Authentication 실패:', error);
+      console.error('Anonymous authentication failed:', error);
     });
   } catch (error) {
-    console.error('❌ Firebase 초기화 실패:', error);
+    console.error('Firebase initialization failed:', error);
     throw error;
   }
 } else {
@@ -104,7 +100,7 @@ if (getApps().length === 0) {
   onAuthStateChanged(auth, user => {
     if (!user) {
       signInAnonymously(auth).catch(error => {
-        console.error('❌ Anonymous Authentication 실패:', error);
+        console.error('Anonymous authentication failed:', error);
       });
     }
   });
