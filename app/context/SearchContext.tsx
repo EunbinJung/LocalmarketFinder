@@ -10,11 +10,9 @@ export interface Market {
   };
   types?: string[];
   business_status?: 'OPERATIONAL' | 'CLOSED_TEMPORARILY' | 'CLOSED_PERMANENTLY';
-  // Optional fields (may not be loaded initially to save costs)
   rating?: number;
   user_ratings_total?: number;
   website?: string;
-  // Support both formats: photos array (Google Places API) and photo_reference string (Firestore)
   photo_reference?: string; // Direct photo_reference field from Firestore
   photo_storage_url?: string; // Firebase Storage URL (preferred)
   formatted_address?: string;
@@ -211,7 +209,7 @@ export function SearchProvider({ children }: { children: ReactNode }) {
 
     const scoped = getMarketsWithinRadius(allMarkets, selectedLocation, scopeRadiusKm);
     setMarkets(scoped);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [selectedLocation, allMarkets, scopeRadiusKm]);
 
   useEffect(() => {
@@ -222,7 +220,7 @@ export function SearchProvider({ children }: { children: ReactNode }) {
 
     const scoped = getMarketsWithinRadius(allMarkets, mapCenter, scopeRadiusKm);
     setMarkets(scoped);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [mapCenter, selectedLocation, allMarkets, scopeRadiusKm]);
 
   return (

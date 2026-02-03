@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState, useRef } from 'react';
-import { ActivityIndicator, Alert, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
 import Geolocation from 'react-native-geolocation-service';
 import { useSearch } from '../../context/SearchContext';
+import React from 'react';
 import CurrentLocationIcon from '../../assets/icons/myMarker.svg';
-import MarkerIcon from '../../assets/icons/marker.svg'; 
+import { Market } from '../../services/marketService';
 
 interface Region {
   latitude: number;
@@ -13,79 +14,73 @@ interface Region {
   longitudeDelta: number;
 }
 
+// Memoized Marker 컴포넌트
+const MarketMarker = React.memo(({ market }: { market: Market }) => (
+  <Marker
+    key={market.place_id}
+    coordinate={{
+      latitude: market.geometry!.location.lat,
+      longitude: market.geometry!.location.lng,
+    }}
+    title={market.name}
+    tracksViewChanges={false} // 필수
+  />
+));
+
 function MapContent() {
   const [region, setRegion] = useState<Region | null>(null);
   const { selectedLocation, filteredMarkets, setMapCenter, setUserLocation } = useSearch();
   const mapRef = useRef<MapView>(null);
-  const isProgrammaticMoveRef = useRef(false); // Track if move is from code vs user drag
+  const isProgrammaticMoveRef = useRef(false);
   const lastSelectedLocationRef = useRef<{ lat: number; lng: number } | null>(null);
 
-  // iOS + Google Maps provider can crash if Marker children are re-ordered.
-  // Render markers in a stable order to avoid native reordering mutations.
-  const markerMarkets = useMemo(() => {
-    if (!Array.isArray(filteredMarkets) || filteredMarkets.length === 0) {
-      return [];
-    }
+  const [mapMarkers, setMapMarkers] = useState<Market[]>([]);
 
+  // Marker 안정화: place_id 순서 기준
+  const markerMarkets = useMemo(() => {
+    if (!Array.isArray(filteredMarkets)) return [];
     return filteredMarkets
-      .filter(market => {
-        const loc = market?.geometry?.location;
-        return (
-          loc &&
-          typeof loc.lat === 'number' &&
-          typeof loc.lng === 'number' &&
-          !isNaN(loc.lat) &&
-          !isNaN(loc.lng)
-        );
-      })
+      .filter(m => m.geometry?.location)
       .sort((a, b) => a.place_id.localeCompare(b.place_id));
   }, [filteredMarkets]);
 
-  // Get initial device location on mount (best effort).
+  // Marker 업데이트를 debounce + identity 체크
   useEffect(() => {
-    // region이 이미 있으면 초기 위치 가져오지 않음
+    const timer = setTimeout(() => {
+      // 이전 배열과 완전히 동일하면 갱신하지 않음
+      if (
+        mapMarkers.length === markerMarkets.length &&
+        mapMarkers.every((m, i) => m.place_id === markerMarkets[i].place_id)
+      ) return;
+
+      setMapMarkers(markerMarkets);
+    }, 100); // 100ms 지연
+    return () => clearTimeout(timer);
+  }, [markerMarkets, mapMarkers]);
+
+  // 위치 가져오기
+  useEffect(() => {
     if (region) return;
 
-    const getLocation = async () => {
-      Geolocation.getCurrentPosition(
-        position => {
-          const { latitude, longitude } = position.coords;
-          const initialRegion = {
-            latitude,
-            longitude,
-            latitudeDelta: 0.05,
-            longitudeDelta: 0.05,
-          };
-          setRegion(initialRegion);
-          setMapCenter({ lat: latitude, lng: longitude });
-          // Persist the device GPS location for "Closest to Me"
-          setUserLocation({ lat: latitude, lng: longitude });
-        },
-        _error => {
-          Alert.alert(
-            'Location Permission',
-            'Location access denied. Showing a random area instead.',
-          );
-          // Fallback to Sydney if location access denied
-          const randomRegion = {
-            latitude: -33.8688,
-            longitude: 151.2093,
-            latitudeDelta: 0.01,
-            longitudeDelta: 0.01,
-          };
-          setRegion(randomRegion);
-          setMapCenter({ lat: -33.8688, lng: 151.2093 });
-          // Keep "Closest to Me" functional even without permission (best-effort fallback)
-          setUserLocation({ lat: -33.8688, lng: 151.2093 });
-        },
-        { enableHighAccuracy: true, timeout: 15000, maximumAge: 10000 },
-      );
-    };
-    getLocation();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    Geolocation.getCurrentPosition(
+      pos => {
+        const { latitude, longitude } = pos.coords;
+        const initRegion = { latitude, longitude, latitudeDelta: 0.05, longitudeDelta: 0.05 };
+        setRegion(initRegion);
+        setMapCenter({ lat: latitude, lng: longitude });
+        setUserLocation({ lat: latitude, lng: longitude });
+      },
+      () => {
+        const fallback = { latitude: -33.8688, longitude: 151.2093, latitudeDelta: 0.01, longitudeDelta: 0.01 };
+        setRegion(fallback);
+        setMapCenter({ lat: fallback.latitude, lng: fallback.longitude });
+        setUserLocation({ lat: fallback.latitude, lng: fallback.longitude });
+      },
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 10000 }
+    );
   }, []);
 
-  // Update map when selectedLocation changes (programmatic move)
+  // selectedLocation 변경 시 지도 이동
   useEffect(() => {
     if (!selectedLocation) {
       lastSelectedLocationRef.current = null;
@@ -94,107 +89,73 @@ function MapContent() {
 
     const { lat, lng } = selectedLocation;
 
-    // Skip if coordinates haven't actually changed (prevent unnecessary updates)
-    if (lastSelectedLocationRef.current &&
-        Math.abs(lastSelectedLocationRef.current.lat - lat) < 0.0001 &&
-        Math.abs(lastSelectedLocationRef.current.lng - lng) < 0.0001) {
-      return;
-    }
+    if (
+      lastSelectedLocationRef.current &&
+      Math.abs(lastSelectedLocationRef.current.lat - lat) < 0.0001 &&
+      Math.abs(lastSelectedLocationRef.current.lng - lng) < 0.0001
+    ) return;
 
-    const newRegion = {
-      latitude: lat,
-      longitude: lng,
-      latitudeDelta: 0.01,
-      longitudeDelta: 0.01,
-    };
+    const newRegion = { latitude: lat, longitude: lng, latitudeDelta: 0.01, longitudeDelta: 0.01 };
+    lastSelectedLocationRef.current = { lat, lng };
 
-    // Update region state for initial render (when region is null)
-    if (!region) {
-      setRegion(newRegion);
-      setMapCenter({ lat, lng });
-      lastSelectedLocationRef.current = { lat, lng };
-      return;
-    }
-
-    // Use animateToRegion for smooth animation (programmatic move)
     if (mapRef.current) {
-      isProgrammaticMoveRef.current = true; // Mark as programmatic move
+      isProgrammaticMoveRef.current = true;
       mapRef.current.animateToRegion(newRegion, 1000);
       setRegion(newRegion);
       setMapCenter({ lat, lng });
-      lastSelectedLocationRef.current = { lat, lng };
+    } else {
+      setRegion(newRegion);
+      setMapCenter({ lat, lng });
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedLocation]); // region 제거하여 무한 루프 방지
+  }, [selectedLocation, setMapCenter ]);
 
-  if (!region)
+  if (!region) {
     return (
       <View className="flex-1 items-center justify-center bg-tertiary">
         <ActivityIndicator size="large" color="#FF8A65" />
       </View>
     );
+  }
 
   return (
-    <View className="flex-1" style={styles.container}>
+    <View style={styles.container}>
       <MapView
         ref={mapRef}
         provider={PROVIDER_GOOGLE}
         initialRegion={region}
         style={{ flex: 1 }}
-        showsUserLocation={true}
-        zoomEnabled={true}
-        zoomControlEnabled={false}
-        scrollEnabled={true}
-        pitchEnabled={true}
-        rotateEnabled={true}
-        // onRegionChangeComplete={(newRegion) => {
-        //   // Only update mapCenter if this is a user-initiated drag (not programmatic)
-        //   if (!isProgrammaticMoveRef.current) {
-        //     setMapCenter({ lat: newRegion.latitude, lng: newRegion.longitude });
-        //   }
-        //   // Reset flag after handling
-        //   isProgrammaticMoveRef.current = false;
-        // }}
-        onRegionChangeComplete={(newRegion) => {
+        showsUserLocation
+        zoomEnabled
+        scrollEnabled
+        pitchEnabled
+        rotateEnabled
+        removeClippedSubviews={false}
+        liteMode={false}
+        collapsable={false}
+        onRegionChangeComplete={newRegion => {
           if (isProgrammaticMoveRef.current) {
             isProgrammaticMoveRef.current = false;
             return;
           }
-        
+
           setMapCenter(prev => {
             if (
               prev &&
               Math.abs(prev.lat - newRegion.latitude) < 0.0001 &&
               Math.abs(prev.lng - newRegion.longitude) < 0.0001
-            ) {
-              return prev;
-            }
-        
-            return {
-              lat: newRegion.latitude,
-              lng: newRegion.longitude,
-            };
+            ) return prev;
+
+            return { lat: newRegion.latitude, lng: newRegion.longitude };
           });
         }}
-        
       >
         <Marker coordinate={region} title="현재 위치">
           <CurrentLocationIcon width={45} height={45} />
         </Marker>
-        {markerMarkets.map(market => (
-            <Marker
-              key={market.place_id}
-              coordinate={{
-                latitude: market.geometry!.location.lat,
-                longitude: market.geometry!.location.lng,
-              }}
-              title={market.name}
-              tracksViewChanges={false}
-            >
-              <MarkerIcon width={40} height={40} />
-            </Marker>
-          ))}
 
+        {mapMarkers.map(market => (
+          <MarketMarker key={market.place_id} market={market} />
+        ))}
       </MapView>
     </View>
   );
