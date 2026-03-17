@@ -49,6 +49,7 @@ target 'localmarketfinder' do
   pod 'FirebaseCoreInternal', :modular_headers => true
   pod 'FirebaseFirestore', :modular_headers => true
   pod 'FirebaseFirestoreInternal', :modular_headers => true
+  pod 'FirebaseMessaging', :modular_headers => true
 
   post_install do |installer|
     react_native_post_install(

@@ -6,6 +6,7 @@ const admin = require('firebase-admin');
 const axios = require('axios');
 const { initializeFirebaseAdmin } = require('./utils/firebaseAdmin');
 const { uploadPhotoToStorage } = require('./utils/photoStorage');
+const { isLocalMarket, looksLikeGroceryFromDetails, looksLikeGroceryName } = require('./utils/marketFilters');
 
 /**
  * Firebase + Google Places Market Import Script (Discover + Initializer 통합)
@@ -172,142 +173,6 @@ async function discoverAndImportMarkets() {
 }
 
 /**
- * Keyword-based market filtering
- * - Exclude hotels, resorts, supermarkets, malls
- * - Include only real local markets using keyword matching
- */
-// Strong market patterns (event-style markets)
-const STRONG_MARKET_REGEXES = [
-  /\bfarmers?\s+market\b/i,
-  /\bfarmer's\s+market\b/i,
-  /\bcommunity\s+market\b/i,
-  /\bweekend\s+market\b/i,
-  /\bartisan\s+market\b/i,
-  /\bcraft\s+market\b/i,
-  /\bflea\s+market\b/i,
-  /\bvillage\s+market\b/i,
-  /\bgrowers?\s+market\b/i,
-  /\bmakers?\s+market\b/i,
-  /\bhandmade\s+market\b/i,
-  /\bnight\s+market\b/i,
-  /\bsunday\s+market\b/i,
-  /\bsaturday\s+market\b/i,
-  /\bpopup\s+market\b/i,
-  /\bpop-up\s+market\b/i,
-];
-
-// Generic "market(s)" word (word boundary avoids matching "supermarket")
-const MARKET_WORD_REGEX = /\bmarkets?\b/i;
-
-// Grocery / retail chains & patterns to exclude (focus on "market" groceries)
-const GROCERY_NAME_REGEXES = [
-  /\b(supermarket|grocery|grocer|groceries)\b/i,
-  /\b(woolworths|coles|aldi|costco|iga|foodworks|spudshed|drakes|foodland|spar)\b/i,
-  /\b(harris\s*farm)\b/i,
-  /\b(bottle\s*shop|liquor)\b/i,
-  /\b(mini\s*mart|minimart|convenience)\b/i,
-];
-
-const EXCLUDE_KEYWORDS = [
-  'shopping centre',
-  'shopping center',
-  'community_centre',
-  'city_hall',
-  'local_government_office',
-  'mall',
-];
-
-function hasStrongMarketSignal(nameLower) {
-  return STRONG_MARKET_REGEXES.some(r => r.test(nameLower));
-}
-
-function hasMarketWord(nameLower) {
-  return MARKET_WORD_REGEX.test(nameLower);
-}
-
-function looksLikeGroceryName(nameLower) {
-  return GROCERY_NAME_REGEXES.some(r => r.test(nameLower));
-}
-
-function countOpenDaysFromWeekdayText(weekdayText) {
-  if (!Array.isArray(weekdayText)) return null;
-  let openDays = 0;
-  for (const line of weekdayText) {
-    const lower = String(line || '').toLowerCase();
-    if (!lower) continue;
-    if (lower.includes('closed')) continue;
-    openDays += 1;
-  }
-  return openDays;
-}
-
-function looksLikeGroceryFromDetails(place) {
-  const nameLower = (place?.name || '').toLowerCase();
-  const types = (place?.types || []).map(t => String(t).toLowerCase());
-
-  // Always exclude known grocery-like names / chains
-  if (looksLikeGroceryName(nameLower)) return true;
-
-  // Always exclude by types if Google marks it as a supermarket/grocery
-  const groceryTypes = [
-    'grocery_or_supermarket',
-    'supermarket',
-    'convenience_store',
-    'department_store',
-    'liquor_store',
-    'shopping_mall',
-  ];
-  if (groceryTypes.some(t => types.includes(t))) return true;
-
-  // Schedule heuristic: groceries are usually open 6-7 days.
-  // We only apply this when the name is a generic "market" (not strong event market signal).
-  if (hasMarketWord(nameLower) && !hasStrongMarketSignal(nameLower)) {
-    const openDays = countOpenDaysFromWeekdayText(place?.opening_hours?.weekday_text);
-    if (typeof openDays === 'number' && openDays >= 6) {
-      return true;
-    }
-  }
-
-  return false;
-}
-
-function isLocalMarket(place) {
-  const name = (place.name || '').toLowerCase();
-  const types = (place.types || []).map(t => t.toLowerCase());
-
-  // 1. Exclude by name keywords
-  if (EXCLUDE_KEYWORDS.some(keyword => name.includes(keyword))) {
-    return false;
-  }
-
-  // 2. Exclude by strong grocery-ish name patterns (word-boundary safe)
-  if (looksLikeGroceryName(name)) {
-    return false;
-  }
-
-  // 3. Exclude by place types
-  const excludeTypes = [
-    'lodging',
-    'hotel',
-    'shopping_mall',
-    'supermarket',
-    'grocery_or_supermarket',
-    'convenience_store',
-    'department_store',
-    'liquor_store',
-  ];
-
-  if (excludeTypes.some(type => types.includes(type))) {
-    return false;
-  }
-
-  // 4. Include only if it looks like a market.
-  // Strong signals first; fallback to generic "market(s)" word.
-  if (hasStrongMarketSignal(name)) return true;
-  return hasMarketWord(name);
-}
-
-/**
  * Place Details 호출 및 Firestore 저장 데이터 준비
  * - 신규 마켓만 처리 (이미 존재하면 null 반환)
  * - 가져오는 필드: name, geometry, types, business_status, rating, user_ratings_total, photos, formatted_address, opening_hours, place_id
@@ -330,7 +195,7 @@ async function importPlaceDetails(placeId, apiKey) {
       {
         params: {
           place_id: placeId,
-          fields: 'name,rating,user_ratings_total,photos,geometry,formatted_address,opening_hours,types,business_status,place_id',
+          fields: 'name,rating,user_ratings_total,photos,geometry,formatted_address,opening_hours,types,business_status,place_id,website',
           key: apiKey,
         },
       }
@@ -397,6 +262,7 @@ async function importPlaceDetails(placeId, apiKey) {
       types: place.types || [],
       business_status: place.business_status || 'OPERATIONAL',
       source: 'google',
+      website: place.website || '',
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     };

@@ -7,9 +7,9 @@ import {
   Alert,
   ActivityIndicator,
 } from 'react-native';
-import { ReactionField, ReactionValue } from '../../utils/reactionStorage';
-import { setUserReaction } from '../../utils/reactionStorage';
-import { updateReactionWithTransaction } from '../../services/reactionService';
+import { ReactionField, ReactionValue } from '../../../utils/reactionStorage';
+import { setUserReaction } from '../../../utils/reactionStorage';
+import { updateReactionWithTransaction } from '../../../services/reactionService';
 
 interface ReactionModalProps {
   visible: boolean;
@@ -47,7 +47,7 @@ function ReactionModal({
     if (selectedReaction === reaction) {
       return;
     }
-    
+
     // If changing to a different reaction, show confirmation
     if (currentReaction && currentReaction !== reaction) {
       Alert.alert(

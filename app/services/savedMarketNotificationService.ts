@@ -110,7 +110,7 @@ export async function upsertSavedMarketNotificationSettings(
     ) {
       update.notifyLeadDays = partial.leadDays;
     }
-    if (partial.openDays) update.notifyOpenDays = normalizeOpenDays(partial.openDays);
+    if (partial.openDays !== undefined) update.notifyOpenDays = normalizeOpenDays(partial.openDays);
     if (typeof partial.timeOfDay === 'string') {
       const t = normalizeTimeOfDay(partial.timeOfDay);
       update.notifyTimeOfDay = t || DEFAULT_TIME_OF_DAY;

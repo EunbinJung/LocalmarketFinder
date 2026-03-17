@@ -1,35 +1,15 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
-import {
-  ActivityIndicator,
-  Alert,
-  Linking,
-  RefreshControl,
-  ScrollView,
-  Text,
-  TouchableOpacity,
-  View,
-} from 'react-native';
+import { ActivityIndicator, Alert, RefreshControl, ScrollView, View } from 'react-native';
 import { db, ensureAuthenticated, getCurrentUserId } from '../../services/firebase';
 import { deleteMarketComment } from '../../services/marketDetailsService';
 import { useSearch } from '../../context/SearchContext';
-
-const FEEDBACK_URL = 'https://github.com/EunbinJung/LocalmarketFinder/issues/new';
-
-type MyCommentItem = {
-  commentId: string;
-  placeId: string;
-  text: string;
-  createdAt?: any;
-  marketName?: string;
-};
-
-type MyReactionItem = {
-  placeId: string;
-  updatedAt?: any;
-  marketName?: string;
-  fields: Array<{ key: string; value: string }>;
-};
+import { MyCommentItem, MyReactionItem } from './types';
+import MyAccountCard from './sections/MyAccountCard';
+import MyComments from './sections/MyComments';
+import MyReactions from './sections/MyReactions';
+import MyAppInfo from './sections/MyAppInfo';
+import MyFeedback from './sections/MyFeedback';
 
 function MyContent() {
   const { savedMarketIds } = useSearch();
@@ -132,8 +112,7 @@ function MyContent() {
       );
 
       setComments(results.filter(Boolean) as MyCommentItem[]);
-    } catch (error) {
-      console.error('Error loading my comments:', error);
+    } catch {
       setComments([]);
     } finally {
       setLoadingComments(false);
@@ -256,13 +235,23 @@ function MyContent() {
       }
 
       setReactions(base);
-    } catch (error) {
-      console.error('Error loading my reactions:', error);
+    } catch {
       setReactions([]);
     } finally {
       setLoadingReactions(false);
     }
   }, [uid, savedMarketIds]);
+
+  const handleDeleteComment = useCallback(async (placeId: string, commentId: string) => {
+    const ok = await deleteMarketComment(placeId, commentId);
+    if (ok) {
+      setComments(prev =>
+        prev.filter(x => !(x.placeId === placeId && x.commentId === commentId)),
+      );
+    } else {
+      Alert.alert('Error', 'Failed to delete comment.');
+    }
+  }, []);
 
   const refreshAll = useCallback(async () => {
     if (!uid) return;
@@ -301,160 +290,17 @@ function MyContent() {
         />
       }
     >
-      {/* Data / Account */}
-      <View className="mx-4 mt-3 mb-4 bg-white rounded-3xl border border-gray-100 p-5">
-        <Text className="text-lg font-bold text-gray-900">🧾 Data / Account</Text>
-        <Text className="text-sm text-gray-600 mt-1">Anonymous user id</Text>
-        <View className="mt-4 bg-tertiary rounded-2xl px-4 py-3">
-          <Text className="text-xs text-gray-600 font-semibold">User ID</Text>
-          <Text className="text-sm text-gray-900 font-semibold mt-1">{uid || '—'}</Text>
-        </View>
-      </View>
-
-      {/* My activity - Comments */}
-      <View className="mx-4 mb-4 bg-white rounded-3xl border border-gray-100 p-5">
-        <View className="flex-row items-center justify-between">
-          <View>
-            <Text className="text-lg font-bold text-gray-900">💬 My comments</Text>
-            <Text className="text-sm text-gray-600 mt-1">Your recent comments</Text>
-          </View>
-          {loadingComments && <ActivityIndicator size="small" color="#E69DB8" />}
-        </View>
-
-        {comments.length === 0 && !loadingComments ? (
-          <Text className="text-gray-600 mt-4">No comments yet.</Text>
-        ) : (
-          <View className="mt-4 gap-3">
-            {comments.slice(0, 10).map(c => (
-              <View
-                key={`${c.placeId}:${c.commentId}`}
-                className="bg-tertiary rounded-2xl p-4"
-              >
-                <Text className="text-gray-900 font-semibold" numberOfLines={1}>
-                  {c.marketName || c.placeId}
-                </Text>
-                <Text className="text-gray-700 mt-2">{c.text}</Text>
-                <View className="flex-row justify-end mt-3">
-                  <TouchableOpacity
-                    onPress={() => {
-                      Alert.alert(
-                        'Delete comment',
-                        'Are you sure you want to delete this comment?',
-                        [
-                          { text: 'Cancel', style: 'cancel' },
-                          {
-                            text: 'Delete',
-                            style: 'destructive',
-                            onPress: async () => {
-                              const ok = await deleteMarketComment(c.placeId, c.commentId);
-                              if (ok) {
-                                setComments(prev =>
-                                  prev.filter(
-                                    x =>
-                                      !(
-                                        x.placeId === c.placeId &&
-                                        x.commentId === c.commentId
-                                      ),
-                                  ),
-                                );
-                              } else {
-                                Alert.alert('Error', 'Failed to delete comment.');
-                              }
-                            },
-                          },
-                        ],
-                      );
-                    }}
-                    className="px-4 py-2 rounded-full bg-white"
-                    activeOpacity={0.85}
-                  >
-                    <Text className="text-primary font-semibold">Delete</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-            ))}
-          </View>
-        )}
-      </View>
-
-      {/* My activity - Reactions */}
-      <View className="mx-4 mb-4 bg-white rounded-3xl border border-gray-100 p-5">
-        <View className="flex-row items-center justify-between">
-          <View>
-            <Text className="text-lg font-bold text-gray-900">✨ My reactions</Text>
-            <Text className="text-sm text-gray-600 mt-1">Your saved votes</Text>
-          </View>
-          {loadingReactions && <ActivityIndicator size="small" color="#E69DB8" />}
-        </View>
-
-        {reactions.length === 0 && !loadingReactions ? (
-          <Text className="text-gray-600 mt-4">No reactions yet.</Text>
-        ) : (
-          <View className="mt-4 gap-3">
-            {reactions.slice(0, 10).map(r => (
-              <View key={r.placeId} className="bg-tertiary rounded-2xl p-4">
-                <Text className="text-gray-900 font-semibold" numberOfLines={1}>
-                  {r.marketName || r.placeId}
-                </Text>
-                <View className="flex-row flex-wrap gap-2 mt-3">
-                  {r.fields.slice(0, 8).map(f => (
-                    <View key={f.key} className="bg-white px-3 py-1.5 rounded-full">
-                      <Text className="text-gray-700 text-xs font-semibold">
-                        {f.key}: {f.value}
-                      </Text>
-                    </View>
-                  ))}
-                </View>
-              </View>
-            ))}
-          </View>
-        )}
-      </View>
-
-      {/* App info */}
-      <View className="mx-4 mb-4 bg-white rounded-3xl border border-gray-100 p-5">
-        <Text className="text-lg font-bold text-gray-900">📱 App info</Text>
-        <View className="mt-4 gap-2">
-          <View className="flex-row justify-between">
-            <Text className="text-gray-600">Version</Text>
-            <Text className="text-gray-900 font-semibold">{appMeta.version}</Text>
-          </View>
-          <View className="flex-row justify-between">
-            <Text className="text-gray-600">Build</Text>
-            <Text className="text-gray-900 font-semibold">{appMeta.build}</Text>
-          </View>
-          {!!appMeta.reactNative && (
-            <View className="flex-row justify-between">
-              <Text className="text-gray-600">React Native</Text>
-              <Text className="text-gray-900 font-semibold">{appMeta.reactNative}</Text>
-            </View>
-          )}
-        </View>
-      </View>
-
-      {/* Feedback */}
-      <View className="mx-4 mb-4 bg-white rounded-3xl border border-gray-100 p-5">
-        <Text className="text-lg font-bold text-gray-900">🧑‍💻 Feedback</Text>
-        <Text className="text-gray-600 mt-2">
-          Report bugs or request features via GitHub Issues.
-        </Text>
-        <TouchableOpacity
-          onPress={() => {
-            Linking.openURL(FEEDBACK_URL).catch(() => {
-              Alert.alert('Error', 'Could not open the feedback page.');
-            });
-          }}
-          activeOpacity={0.85}
-          className="mt-4 bg-primary px-4 py-3 rounded-2xl"
-        >
-          <Text className="text-white font-semibold text-center">
-            Open GitHub Issues
-          </Text>
-        </TouchableOpacity>
-      </View>
+      <MyAccountCard uid={uid} />
+      <MyComments
+        comments={comments}
+        loadingComments={loadingComments}
+        onDelete={handleDeleteComment}
+      />
+      <MyReactions reactions={reactions} loadingReactions={loadingReactions} />
+      <MyAppInfo appMeta={appMeta} />
+      <MyFeedback />
     </ScrollView>
   );
 }
 
 export default MyContent;
-

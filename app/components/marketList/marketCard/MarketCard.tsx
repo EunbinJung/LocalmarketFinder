@@ -46,7 +46,7 @@ function MarketCard({ market }: MarketCardProps) {
       onPress={() => setSelectedMarket(market)}
     >
       {/* Header: Name + Status */}
-      <View className="flex-1 pr-2">
+      <View className="pr-2">
         <Text className="text-2xl font-semibold text-gray-700 mb-2">
           {market.name}
         </Text>

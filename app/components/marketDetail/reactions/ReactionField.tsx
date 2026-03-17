@@ -1,14 +1,14 @@
 import { useState, useEffect, useCallback } from 'react';
 import { View, Text, TouchableOpacity } from 'react-native';
-import { ReactionField as ReactionFieldType } from '../../utils/reactionStorage';
-import { getUserReaction } from '../../utils/reactionStorage';
+import { ReactionField as ReactionFieldType } from '../../../utils/reactionStorage';
+import { getUserReaction } from '../../../utils/reactionStorage';
 import {
   getMarketInfo,
   hasNewInfoWithTieHandling,
   isFieldEmpty,
   getUserReactionFromSubcollection,
   getDisplayedValue,
-} from '../../services/reactionService';
+} from '../../../services/reactionService';
 import ReactionModal from './ReactionModal';
 
 interface ReactionFieldProps {
@@ -42,10 +42,9 @@ function ReactionField({
   const loadMarketInfo = useCallback(async () => {
     const info = await getMarketInfo(placeId);
     setMarketInfo(info);
+    setIsEmpty(isFieldEmpty(fieldName, info));
     if (info) {
-      // Use new tie handling logic
       setHasNew(hasNewInfoWithTieHandling(fieldName, info));
-      setIsEmpty(isFieldEmpty(fieldName, info));
     }
   }, [placeId, fieldName]);
 
@@ -61,7 +60,7 @@ function ReactionField({
 
   // Handle parking field (Free, Paid, Street) vs other fields (Yes/No)
   const isParking = fieldName === 'parking';
-  
+
   // Get displayed value (determined field)
   const displayedValue = getDisplayedValue(fieldName, marketInfo);
 

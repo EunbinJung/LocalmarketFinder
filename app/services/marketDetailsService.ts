@@ -161,9 +161,14 @@ export async function saveMarketDetails(
     if (docSnap.exists()) {
       await updateDoc(docRef, updateData);
     } else {
+      const now = Timestamp.now();
       await setDoc(docRef, {
         ...updateData,
-        createdAt: Timestamp.now(),
+        createdAt: now,
+        cycle: {
+          lastResetAt: now,
+          nextResetAt: Timestamp.fromMillis(now.toMillis() + 7 * 24 * 60 * 60 * 1000),
+        },
       });
     }
     return true;

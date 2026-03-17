@@ -116,8 +116,23 @@ export async function ensureAuthenticated(): Promise<string> {
   if (auth.currentUser) {
     return auth.currentUser.uid;
   }
-  const userCredential = await signInAnonymously(auth);
-  return userCredential.user.uid;
+
+  // Wait for auth state to stabilize (handles race with initialization sign-in)
+  return new Promise((resolve, reject) => {
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      unsubscribe();
+      if (user) {
+        resolve(user.uid);
+      } else {
+        try {
+          const userCredential = await signInAnonymously(auth);
+          resolve(userCredential.user.uid);
+        } catch (error) {
+          reject(error);
+        }
+      }
+    });
+  });
 }
 
 export { db, auth };

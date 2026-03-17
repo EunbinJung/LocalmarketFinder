@@ -58,8 +58,7 @@ function MarketList({
       {list.map((market) => {
         try {
           return <MarketCard key={market.place_id} market={market} />;
-        } catch (error) {
-          console.error('Error rendering market:', error);
+        } catch {
           return null;
         }
       })}

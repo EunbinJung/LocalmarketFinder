@@ -3,9 +3,9 @@ import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
 import Geolocation from 'react-native-geolocation-service';
 import { useSearch } from '../../context/SearchContext';
-import React from 'react';
 import CurrentLocationIcon from '../../assets/icons/myMarker.svg';
 import { Market } from '../../services/marketService';
+import MarketMarker from './MarketMarker';
 
 interface Region {
   latitude: number;
@@ -13,19 +13,6 @@ interface Region {
   latitudeDelta: number;
   longitudeDelta: number;
 }
-
-// Memoized Marker 컴포넌트
-const MarketMarker = React.memo(({ market }: { market: Market }) => (
-  <Marker
-    key={market.place_id}
-    coordinate={{
-      latitude: market.geometry!.location.lat,
-      longitude: market.geometry!.location.lng,
-    }}
-    title={market.name}
-    tracksViewChanges={false} // 필수
-  />
-));
 
 function MapContent() {
   const [region, setRegion] = useState<Region | null>(null);
@@ -107,7 +94,7 @@ function MapContent() {
       setRegion(newRegion);
       setMapCenter({ lat, lng });
     }
-  }, [selectedLocation, setMapCenter ]);
+  }, [selectedLocation, setMapCenter]);
 
   if (!region) {
     return (

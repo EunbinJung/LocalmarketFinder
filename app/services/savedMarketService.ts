@@ -49,6 +49,11 @@ export async function saveMarket(placeId: string): Promise<boolean> {
     await setDoc(savedMarketRef, {
       placeId,
       savedAt: new Date(),
+      notifyEnabled: false,
+      notifyLeadDays: 1,
+      notifyTimeOfDay: '20:00',
+      notifyOpenDays: [],
+      notifyUpdatedAt: new Date(),
     });
     
     return true;
