@@ -5,14 +5,17 @@ import FeedScreen from '../screens/FeedScreen';
 import MyScreen from '../screens/MyScreen';
 import SearchScreen from '../screens/SearchScreen';
 import { useSearch } from '../context/SearchContext';
+import AppLoadingScreen from '../components/common/AppLoadingScreen';
 
 import MapIcon from '../assets/icons/map.svg';
 import FeedIcon from '../assets/icons/feed.svg';
 import MyIcon from '../assets/icons/profile.svg';
 
 function Tabs() {
-  const { savedMarketIds } = useSearch();
+  const { savedMarketIds, loading } = useSearch();
   const savedCount = savedMarketIds.length;
+
+  if (loading) return <AppLoadingScreen />;
 
   const Tab = createBottomTabNavigator();
   const Stack = createNativeStackNavigator();

@@ -1,5 +1,6 @@
 import React from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Star } from 'lucide-react-native';
 import { Callout, Marker } from 'react-native-maps';
 import { Market } from '../../services/marketService';
 import { useSearch } from '../../context/SearchContext';
@@ -33,7 +34,10 @@ const MarketMarker = React.memo(({ market }: { market: Market }) => {
               {isOpen ? 'Open now' : 'Closed'}
             </Text>
             {market.rating ? (
-              <Text style={calloutStyles.rating}>⭐ {market.rating}</Text>
+              <View style={calloutStyles.ratingRow}>
+                <Star size={11} color="#FBBF24" fill="#FBBF24" />
+                <Text style={calloutStyles.rating}>{market.rating}</Text>
+              </View>
             ) : null}
           </View>
           <View style={calloutStyles.arrow} />
@@ -89,10 +93,15 @@ const calloutStyles = StyleSheet.create({
   statusClosed: {
     color: '#EF5350',
   },
+  ratingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    marginLeft: 4,
+  },
   rating: {
     fontSize: 12,
     color: '#6B7280',
-    marginLeft: 4,
   },
   arrow: {
     position: 'absolute',

@@ -1,11 +1,13 @@
 import { useMemo } from 'react';
 import { Image, Switch, Text, TouchableOpacity, View } from 'react-native';
+import { Bell, BellOff, Clock } from 'lucide-react-native';
 import { Market, useSearch } from '../../../context/SearchContext';
 import { SavedMarketNotificationSettings } from '../../../services/savedMarketNotificationService';
 import { getPhotoUrl } from '../../../utils/photoUtils';
 
 interface Props {
   market: Market;
+  nextAlertIcon: 'off' | 'pending' | 'scheduled';
   nextAlertText: string;
   weeklyOpenDaysText: string;
   expanded: boolean;
@@ -14,8 +16,15 @@ interface Props {
   onChange: (partial: Partial<SavedMarketNotificationSettings>) => void;
 }
 
+const ALERT_ICONS = {
+  off: BellOff,
+  pending: Clock,
+  scheduled: Bell,
+} as const;
+
 function MarketCardHeader({
   market,
+  nextAlertIcon,
   nextAlertText,
   weeklyOpenDaysText,
   expanded,
@@ -41,9 +50,12 @@ function MarketCardHeader({
           <Text className="text-lg font-bold text-gray-900" numberOfLines={1}>
             {market.name}
           </Text>
-          <Text className="text-sm text-gray-600 mt-1" numberOfLines={1} ellipsizeMode="tail">
-            {nextAlertText}
-          </Text>
+          <View className="flex-row items-center gap-1.5 mt-1">
+            {(() => { const Icon = ALERT_ICONS[nextAlertIcon]; return <Icon size={13} color="#9CA3AF" />; })()}
+            <Text className="text-sm text-gray-600 flex-1" numberOfLines={1} ellipsizeMode="tail">
+              {nextAlertText}
+            </Text>
+          </View>
         </TouchableOpacity>
 
         <View className="flex-row items-center gap-3">

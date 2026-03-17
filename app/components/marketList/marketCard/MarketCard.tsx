@@ -1,4 +1,5 @@
 import { Image, Text, TouchableOpacity, View } from 'react-native';
+import { MessageCircle, Star } from 'lucide-react-native';
 import { Market, useSearch } from '../../../context/SearchContext';
 import { getMarketOpenStatus } from '../../../utils/marketOpenStatus';
 import { getPhotoUrl } from '../../../utils/photoUtils';
@@ -53,12 +54,14 @@ function MarketCard({ market }: MarketCardProps) {
       </View>
 
       <View className="flex-row items-center justify-start gap-2 mb-2">
-        <Text className="text-md text-gray-500">
-          {market.rating || 'No rating'} 🌟
-        </Text>
-        <Text className="text-md text-gray-500">
-          {market.user_ratings_total || 'No reviews'} 💬
-        </Text>
+        <View className="flex-row items-center gap-1">
+          <Star size={14} color="#FBBF24" fill="#FBBF24" />
+          <Text className="text-md text-gray-500">{market.rating || 'No rating'}</Text>
+        </View>
+        <View className="flex-row items-center gap-1">
+          <MessageCircle size={14} color="#9CA3AF" />
+          <Text className="text-md text-gray-500">{market.user_ratings_total || 'No reviews'}</Text>
+        </View>
       </View>
 
       <View className="flex-row items-center justify-start gap-2 mb-1">

@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 import { Text, View } from 'react-native';
+import { Sparkles } from 'lucide-react-native';
 import { Market } from '../../../context/SearchContext';
 import { SavedMarketNotificationSettings } from '../../../services/savedMarketNotificationService';
 import { DEFAULT_ALERT_TIME, computeNextAlert } from '../../../utils/alertTimeUtils';
@@ -37,7 +38,10 @@ function UpcomingAlertsSection({ items }: Props) {
     <View className="mx-4 mb-4 rounded-3xl overflow-hidden border border-secondary bg-white">
       <View className="bg-white px-5 pt-5 pb-4">
         <View className="flex-row items-center justify-between">
-          <Text className="text-lg font-bold text-gray-900">✨ Upcoming</Text>
+          <View className="flex-row items-center gap-2">
+            <Sparkles size={18} color="#E69DB8" />
+            <Text className="text-lg font-bold text-gray-900">Upcoming</Text>
+          </View>
           <View className="bg-tertiary px-3 py-1.5 rounded-full border border-gray-100">
             <Text className="text-gray-700 font-semibold">{upcoming.length}</Text>
           </View>

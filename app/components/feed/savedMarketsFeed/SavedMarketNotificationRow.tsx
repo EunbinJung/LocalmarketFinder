@@ -49,18 +49,22 @@ function SavedMarketNotificationRow({
       .join(' · ');
   }, [market]);
 
-  const nextAlertText = useMemo(() => {
-    if (!settings.enabled) return '🔕 Off';
+  const nextAlert = useMemo(() => {
+    if (!settings.enabled) return { icon: 'off' as const, text: 'Off' };
     const next = computeNextAlert(market, settings, DEFAULT_ALERT_TIME, new Date());
-    if (!next.notifyAt) return '⏳ Not scheduled';
-    return `🔔 ${formatRelativeDay(next.notifyAt, new Date())} · ${formatTime12h(effectiveTimeOfDay)}`;
+    if (!next.notifyAt) return { icon: 'pending' as const, text: 'Not scheduled' };
+    return {
+      icon: 'scheduled' as const,
+      text: `${formatRelativeDay(next.notifyAt, new Date())} · ${formatTime12h(effectiveTimeOfDay)}`,
+    };
   }, [market, settings, effectiveTimeOfDay]);
 
   return (
     <View className="mx-4 mb-4 bg-white rounded-3xl border border-gray-100 overflow-hidden">
       <MarketCardHeader
         market={market}
-        nextAlertText={nextAlertText}
+        nextAlertIcon={nextAlert.icon}
+        nextAlertText={nextAlert.text}
         weeklyOpenDaysText={weeklyOpenDaysText}
         expanded={expanded}
         onToggleExpanded={onToggleExpanded}

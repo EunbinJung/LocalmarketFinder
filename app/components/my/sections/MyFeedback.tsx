@@ -1,11 +1,15 @@
 import { Alert, Linking, Text, TouchableOpacity, View } from 'react-native';
+import { MessageSquare } from 'lucide-react-native';
 
 const FEEDBACK_URL = 'https://github.com/EunbinJung/LocalmarketFinder/issues/new';
 
 function MyFeedback() {
   return (
     <View className="mx-4 mb-4 bg-white rounded-3xl border border-gray-100 p-5">
-      <Text className="text-lg font-bold text-gray-900">🧑‍💻 Feedback</Text>
+      <View className="flex-row items-center gap-2">
+        <MessageSquare size={18} color="#1F2937" />
+        <Text className="text-lg font-bold text-gray-900">Feedback</Text>
+      </View>
       <Text className="text-gray-600 mt-2">
         Report bugs or request features via GitHub Issues.
       </Text>

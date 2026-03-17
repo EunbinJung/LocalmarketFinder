@@ -1,4 +1,5 @@
 import { Text, View } from 'react-native';
+import { CalendarDays } from 'lucide-react-native';
 
 interface ScheduleDay {
   day: string;
@@ -20,7 +21,7 @@ function MarketSchedule({ weeklySchedule }: Props) {
     >
       <View className="flex-row items-center gap-2 mb-4">
         <View className="bg-secondary w-10 h-10 rounded-full justify-center items-center">
-          <Text className="text-xl">📅</Text>
+          <CalendarDays size={20} color="#E69DB8" />
         </View>
         <Text className="text-lg font-bold text-gray-800">Date and Time</Text>
       </View>

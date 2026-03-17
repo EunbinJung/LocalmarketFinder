@@ -1,4 +1,5 @@
 import { ActivityIndicator, Text, View } from 'react-native';
+import { Sparkles } from 'lucide-react-native';
 import { MyReactionItem } from '../types';
 
 interface Props {
@@ -11,7 +12,10 @@ function MyReactions({ reactions, loadingReactions }: Props) {
     <View className="mx-4 mb-4 bg-white rounded-3xl border border-gray-100 p-5">
       <View className="flex-row items-center justify-between">
         <View>
-          <Text className="text-lg font-bold text-gray-900">✨ My reactions</Text>
+          <View className="flex-row items-center gap-2">
+            <Sparkles size={18} color="#1F2937" />
+            <Text className="text-lg font-bold text-gray-900">My reactions</Text>
+          </View>
           <Text className="text-sm text-gray-600 mt-1">Your saved votes</Text>
         </View>
         {loadingReactions && <ActivityIndicator size="small" color="#E69DB8" />}

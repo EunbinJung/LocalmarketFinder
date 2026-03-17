@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Animated, Text, View } from 'react-native';
+import { AlertTriangle, CheckCircle, Info } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export type SnackbarType = 'info' | 'success' | 'error';
@@ -52,10 +53,10 @@ export function useTopSnackbar(opts?: { durationMs?: number }) {
 
     const theme =
       snack.type === 'error'
-        ? { bg: '#FEF2F2', border: '#FECACA', text: '#991B1B', icon: '⚠️' }
+        ? { bg: '#FEF2F2', border: '#FECACA', text: '#991B1B', Icon: AlertTriangle }
         : snack.type === 'success'
-          ? { bg: '#ECFDF5', border: '#A7F3D0', text: '#065F46', icon: '✅' }
-          : { bg: '#FFFFFF', border: '#E5E7EB', text: '#374151', icon: '💡' };
+          ? { bg: '#ECFDF5', border: '#A7F3D0', text: '#065F46', Icon: CheckCircle }
+          : { bg: '#FFFFFF', border: '#E5E7EB', text: '#374151', Icon: Info };
 
     const translateY = anim.interpolate({
       inputRange: [0, 1],
@@ -83,9 +84,10 @@ export function useTopSnackbar(opts?: { durationMs?: number }) {
             borderColor: theme.border,
           }}
         >
-          <Text className="font-semibold text-center" style={{ color: theme.text }}>
-            {theme.icon} {snack.message}
-          </Text>
+          <View className="flex-row items-center justify-center gap-2">
+            <theme.Icon size={16} color={theme.text} />
+            <Text className="font-semibold" style={{ color: theme.text }}>{snack.message}</Text>
+          </View>
         </View>
       </Animated.View>
     );

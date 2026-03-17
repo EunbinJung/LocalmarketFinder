@@ -1,4 +1,5 @@
 import { Text, View } from 'react-native';
+import { Smartphone } from 'lucide-react-native';
 
 interface AppMeta {
   version: string;
@@ -13,7 +14,10 @@ interface Props {
 function MyAppInfo({ appMeta }: Props) {
   return (
     <View className="mx-4 mb-4 bg-white rounded-3xl border border-gray-100 p-5">
-      <Text className="text-lg font-bold text-gray-900">📱 App info</Text>
+      <View className="flex-row items-center gap-2">
+        <Smartphone size={18} color="#1F2937" />
+        <Text className="text-lg font-bold text-gray-900">App info</Text>
+      </View>
       <View className="mt-4 gap-2">
         <View className="flex-row justify-between">
           <Text className="text-gray-600">Version</Text>

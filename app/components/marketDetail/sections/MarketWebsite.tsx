@@ -1,4 +1,5 @@
 import { Linking, Text, TouchableOpacity, View } from 'react-native';
+import { Camera, Globe, Instagram } from 'lucide-react-native';
 
 interface Props {
   website: string;
@@ -6,13 +7,13 @@ interface Props {
 
 function getWebsiteBadge(url: string) {
   const lower = url.toLowerCase();
-  if (lower.includes('instagram.com')) return { label: 'Instagram', emoji: '📸' };
-  if (lower.includes('facebook.com') || lower.includes('fb.com')) return { label: 'Facebook', emoji: '📘' };
-  return { label: 'Website', emoji: '🔗' };
+  if (lower.includes('instagram.com')) return { label: 'Instagram', Icon: Instagram };
+  if (lower.includes('facebook.com') || lower.includes('fb.com')) return { label: 'Facebook', Icon: Globe };
+  return { label: 'Website', Icon: Camera };
 }
 
 function MarketWebsite({ website }: Props) {
-  const { label, emoji } = getWebsiteBadge(website);
+  const { label, Icon } = getWebsiteBadge(website);
   const safeUrl = website.startsWith('http') ? website : `https://${website}`;
 
   return (
@@ -26,7 +27,7 @@ function MarketWebsite({ website }: Props) {
           activeOpacity={0.7}
           className="bg-secondary w-10 h-10 rounded-full justify-center items-center"
         >
-          <Text className="text-xl">{emoji}</Text>
+          <Icon size={20} color="#E69DB8" />
         </TouchableOpacity>
         <Text className="text-lg font-bold text-gray-800">{label}</Text>
       </View>

@@ -1,4 +1,5 @@
 import { Text, TouchableOpacity, View } from 'react-native';
+import { Compass, MapPin } from 'lucide-react-native';
 
 interface Props {
   formattedAddress: string;
@@ -13,7 +14,7 @@ function MarketLocation({ formattedAddress, onOpenDirections }: Props) {
     >
       <View className="flex-row items-center gap-2 mb-3">
         <View className="bg-secondary w-10 h-10 rounded-full justify-center items-center">
-          <Text className="text-xl">📍</Text>
+          <MapPin size={20} color="#E69DB8" />
         </View>
         <Text className="text-lg font-bold text-gray-800">Location</Text>
       </View>
@@ -22,7 +23,7 @@ function MarketLocation({ formattedAddress, onOpenDirections }: Props) {
         onPress={onOpenDirections}
         className="ml-12 bg-primary px-4 py-2.5 rounded-full flex-row items-center gap-2 self-start"
       >
-        <Text className="text-lg">🧭</Text>
+        <Compass size={16} color="#FFFFFF" />
         <Text className="text-white font-semibold text-sm">Directions</Text>
       </TouchableOpacity>
     </View>

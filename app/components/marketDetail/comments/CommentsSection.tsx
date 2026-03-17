@@ -1,4 +1,5 @@
 import { ActivityIndicator, FlatList, Text, TouchableOpacity, View } from 'react-native';
+import { MessageCircle } from 'lucide-react-native';
 import { Comment } from '../../../services/marketDetailsService';
 import CommentInput from './CommentInput';
 import CommentItem from './CommentItem';
@@ -36,7 +37,7 @@ function CommentsSection({
       <View className="flex-row justify-between items-center mb-4">
         <View className="flex-row items-center gap-2">
           <View className="bg-secondary w-10 h-10 rounded-full justify-center items-center">
-            <Text className="text-xl">💬</Text>
+            <MessageCircle size={20} color="#374151" />
           </View>
           <Text className="text-lg font-bold text-gray-800">Comments</Text>
         </View>

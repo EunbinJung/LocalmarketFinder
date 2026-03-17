@@ -1,4 +1,5 @@
 import { Alert, Linking, Text, TouchableOpacity, View } from 'react-native';
+import { Flag, Trash2 } from 'lucide-react-native';
 import { Comment } from '../../../services/marketDetailsService';
 import { auth } from '../../../services/firebase';
 
@@ -66,7 +67,7 @@ function CommentItem({ comment, onDelete }: Props) {
             className="ml-2 p-2"
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
           >
-            <Text className="text-lg">🗑️</Text>
+            <Trash2 size={16} color="#E69DB8" />
           </TouchableOpacity>
         ) : (
           <TouchableOpacity
@@ -74,7 +75,7 @@ function CommentItem({ comment, onDelete }: Props) {
             className="ml-2 p-2"
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
           >
-            <Text className="text-xs text-gray-400">Report</Text>
+            <Flag size={14} color="#D1D5DB" />
           </TouchableOpacity>
         )}
       </View>

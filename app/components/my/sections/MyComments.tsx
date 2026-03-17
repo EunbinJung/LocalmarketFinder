@@ -1,4 +1,5 @@
 import { ActivityIndicator, Alert, Text, TouchableOpacity, View } from 'react-native';
+import { MessageCircle } from 'lucide-react-native';
 import { MyCommentItem } from '../types';
 
 interface Props {
@@ -12,7 +13,10 @@ function MyComments({ comments, loadingComments, onDelete }: Props) {
     <View className="mx-4 mb-4 bg-white rounded-3xl border border-gray-100 p-5">
       <View className="flex-row items-center justify-between">
         <View>
-          <Text className="text-lg font-bold text-gray-900">💬 My comments</Text>
+          <View className="flex-row items-center gap-2">
+            <MessageCircle size={18} color="#1F2937" />
+            <Text className="text-lg font-bold text-gray-900">My comments</Text>
+          </View>
           <Text className="text-sm text-gray-600 mt-1">Your recent comments</Text>
         </View>
         {loadingComments && <ActivityIndicator size="small" color="#E69DB8" />}

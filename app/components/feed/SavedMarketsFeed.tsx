@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { Heart } from 'lucide-react-native';
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -143,7 +144,10 @@ function SavedMarketsFeed({
         <UpcomingAlertsSection items={items} />
 
         <View className="mx-5 mb-2">
-          <Text className="text-lg font-bold text-gray-900">💗 Saved markets</Text>
+          <View className="flex-row items-center gap-2">
+            <Heart size={18} color="#1F2937" />
+            <Text className="text-lg font-bold text-gray-900">Saved markets</Text>
+          </View>
           <Text className="text-sm text-gray-600 mt-1">Tap a card to configure alerts</Text>
         </View>
 

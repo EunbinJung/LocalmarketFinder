@@ -1,4 +1,5 @@
 import { Image, Text, TouchableOpacity, View } from 'react-native';
+import { MessageCircle, Star } from 'lucide-react-native';
 
 interface Props {
   name: string;
@@ -22,13 +23,13 @@ function MarketNameCard({ name, rating, userRatingsTotal, onOpenGoogleMapsReview
           </View>
           {rating && (
             <View className="bg-white px-3 py-1.5 rounded-full flex-row items-center gap-1">
-              <Text className="text-lg">⭐</Text>
+              <Star size={14} color="#FBBF24" fill="#FBBF24" />
               <Text className="text-gray-700 font-semibold text-sm">{rating}</Text>
             </View>
           )}
           {userRatingsTotal && (
             <View className="bg-white px-3 py-1.5 rounded-full flex-row items-center gap-1">
-              <Text className="text-lg">💬</Text>
+              <MessageCircle size={14} color="#9CA3AF" />
               <Text className="text-gray-700 font-semibold text-sm">{userRatingsTotal} reviews</Text>
             </View>
           )}
