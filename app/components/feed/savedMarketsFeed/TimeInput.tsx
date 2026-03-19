@@ -3,7 +3,6 @@ import { ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-nativ
 import { SavedMarketNotificationSettings } from '../../../services/savedMarketNotificationService';
 import {
   DEFAULT_ALERT_TIME,
-  formatTime12h,
   parseTimeToMinutes,
   sanitizeTimeDraft,
 } from '../../../utils/alertTimeUtils';
@@ -30,6 +29,23 @@ function TimeInput({
 }: Props) {
   const [timeDraft, setTimeDraft] = useState(effectiveTimeOfDay);
   const lastInvalidSnackAtRef = useRef(0);
+
+  const currentHour = parseInt(timeDraft.split(':')[0] ?? '0', 10);
+  const currentMinute = timeDraft.split(':')[1] ?? '00';
+  const isAM = !isNaN(currentHour) && currentHour < 12;
+  const isPM = !isNaN(currentHour) && currentHour >= 12;
+
+  const handleAmPm = (period: 'AM' | 'PM') => {
+    const hour = parseInt(timeDraft.split(':')[0] ?? '0', 10);
+    if (isNaN(hour)) return;
+    let newHour = hour;
+    if (period === 'AM' && hour >= 12) newHour = hour - 12;
+    if (period === 'PM' && hour < 12) newHour = hour + 12;
+    if (newHour === hour) return;
+    const newTime = `${String(newHour).padStart(2, '0')}:${currentMinute}`;
+    setTimeDraft(newTime);
+    onChange({ timeOfDay: newTime });
+  };
 
   useEffect(() => {
     setTimeDraft(effectiveTimeOfDay);
@@ -76,8 +92,21 @@ function TimeInput({
             }}
           />
         </View>
-        <View className="bg-tertiary px-3 py-3 rounded-2xl">
-          <Text className="text-gray-700 font-semibold">{formatTime12h(timeDraft)}</Text>
+        <View className="flex-row gap-1">
+          {(['AM', 'PM'] as const).map(period => (
+            <TouchableOpacity
+              key={period}
+              onPress={() => handleAmPm(period)}
+              disabled={!enabled}
+              activeOpacity={0.85}
+              style={{ opacity: enabled ? 1 : 0.45 }}
+              className={`px-3 py-3 rounded-2xl ${(period === 'AM' ? isAM : isPM) ? 'bg-primary' : 'bg-tertiary'}`}
+            >
+              <Text className={`font-semibold ${(period === 'AM' ? isAM : isPM) ? 'text-white' : 'text-gray-700'}`}>
+                {period}
+              </Text>
+            </TouchableOpacity>
+          ))}
         </View>
       </View>
 

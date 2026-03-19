@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { useNavigation } from '@react-navigation/native';
 import {
   Modal,
   View,
@@ -33,11 +34,11 @@ import CommentsSection from './comments/CommentsSection';
 
 function MarketDetailModal() {
   const { selectedMarket, setSelectedMarket, refreshSavedMarkets } = useSearch();
+  const navigation = useNavigation<any>();
   const [loading, setLoading] = useState(false);
   const [comments, setComments] = useState<Comment[]>([]);
   const [loadingComments, setLoadingComments] = useState(false);
   const [submittingComment, setSubmittingComment] = useState(false);
-  const [showCommentInput, setShowCommentInput] = useState(false);
   const [lastCommentId, setLastCommentId] = useState<string | undefined>();
   const [hasMoreComments, setHasMoreComments] = useState(true);
   const [isSaved, setIsSaved] = useState(false);
@@ -109,13 +110,12 @@ function MarketDetailModal() {
   }, [selectedMarket]);
 
   useEffect(() => {
-    if (!showCommentInput) return;
     const eventName = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
     const sub = Keyboard.addListener(eventName, () => {
       scrollCommentsIntoView({ animated: true });
     });
     return () => sub.remove();
-  }, [showCommentInput, scrollCommentsIntoView]);
+  }, [scrollCommentsIntoView]);
 
   useEffect(() => {
     if (!selectedMarket?.place_id) return;
@@ -148,7 +148,6 @@ function MarketDetailModal() {
     setSubmittingComment(true);
     try {
       await addMarketComment(selectedMarket.place_id, commentText);
-      setShowCommentInput(false);
       await loadComments(true);
     } catch (error) {
       console.error('Error adding comment:', error);
@@ -203,12 +202,6 @@ function MarketDetailModal() {
     Linking.openURL(url).catch(() => Alert.alert('Error', 'Could not open Google Maps'));
   };
 
-  const handleToggleCommentInput = () => {
-    const next = !showCommentInput;
-    setShowCommentInput(next);
-    if (next) scrollCommentsIntoView();
-  };
-
   if (!selectedMarket) return null;
 
   const marketWithDetails = selectedMarket as any;
@@ -233,6 +226,10 @@ function MarketDetailModal() {
           <MarketDetailHeader
             onSave={handleSave}
             onClose={() => setSelectedMarket(null)}
+            onAlertPress={() => {
+              setSelectedMarket(null);
+              navigation.navigate('Feed');
+            }}
             isSaved={isSaved}
             loading={saveButtonLoading}
           />
@@ -271,11 +268,8 @@ function MarketDetailModal() {
                   comments={comments}
                   loadingComments={loadingComments}
                   submittingComment={submittingComment}
-                  showCommentInput={showCommentInput}
-                  placeId={selectedMarket.place_id}
                   onAddComment={handleAddComment}
                   onDeleteComment={handleDeleteComment}
-                  onToggleCommentInput={handleToggleCommentInput}
                   onLoadMore={() => { if (!loadingComments && hasMoreComments) loadComments(false); }}
                   onFocusInput={() => scrollCommentsIntoView()}
                 />

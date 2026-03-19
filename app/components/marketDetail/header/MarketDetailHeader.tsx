@@ -1,13 +1,21 @@
 import { ActivityIndicator, Text, TouchableOpacity, View } from 'react-native';
+import { Bell } from 'lucide-react-native';
 
 interface Props {
   onSave: () => void;
   onClose: () => void;
+  onAlertPress?: () => void;
   isSaved: boolean;
   loading: boolean;
 }
 
-function MarketDetailHeader({ onSave, onClose, isSaved, loading }: Props) {
+function MarketDetailHeader({
+  onSave,
+  onClose,
+  onAlertPress,
+  isSaved,
+  loading,
+}: Props) {
   const buttonStyle = loading
     ? { backgroundColor: '#F3F4F6', borderColor: '#E5E7EB' }
     : isSaved
@@ -29,14 +37,30 @@ function MarketDetailHeader({ onSave, onClose, isSaved, loading }: Props) {
     >
       <Text className="text-2xl font-bold text-gray-800">Market Details</Text>
       <View className="flex-row gap-3 items-center">
+        {isSaved && !loading && (
+          <TouchableOpacity
+            onPress={onAlertPress}
+            activeOpacity={0.85}
+            style={{
+              width: 32,
+              height: 32,
+              borderRadius: 999,
+              alignItems: 'center',
+              justifyContent: 'center',
+              backgroundColor: '#E69DB8',
+            }}
+          >
+            <Bell size={18} color="#FFFFFF" />
+          </TouchableOpacity>
+        )}
         <TouchableOpacity
           onPress={onSave}
           disabled={loading}
           activeOpacity={0.85}
           style={{
             minWidth: 67,
+            height: 36,
             paddingHorizontal: 10,
-            paddingVertical: 8,
             borderRadius: 999,
             borderWidth: 1.5,
             alignItems: 'center',
@@ -56,11 +80,25 @@ function MarketDetailHeader({ onSave, onClose, isSaved, loading }: Props) {
             </Text>
           )}
         </TouchableOpacity>
+
         <TouchableOpacity
           onPress={onClose}
-          className="px-5 py-2.5 bg-tertiary rounded-full"
+          activeOpacity={0.85}
+          style={{
+            minWidth: 67,
+            height: 36,
+            paddingHorizontal: 10,
+            borderRadius: 999,
+            borderWidth: 1.5,
+            alignItems: 'center',
+            justifyContent: 'center',
+            backgroundColor: '#F3F4F6',
+            borderColor: '#E5E7EB',
+          }}
         >
-          <Text className="text-gray-700 font-semibold text-sm">Close</Text>
+          <Text style={{ color: '#374151', fontWeight: '600', fontSize: 14 }}>
+            Close
+          </Text>
         </TouchableOpacity>
       </View>
     </View>

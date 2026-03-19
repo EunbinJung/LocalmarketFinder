@@ -134,6 +134,13 @@ export function useBottomSheet() {
 
     console.log("SHEET_Y:", sheetY.value);
 
+  const collapse = () => {
+    sheetY.value = withSpring(SNAP_POINTS.CLOSED, {
+      damping: 40,
+      stiffness: 180,
+    });
+  };
+
   return {
     sheetY,
 
@@ -154,6 +161,9 @@ export function useBottomSheet() {
 
     /** pan gesture for sheet */
     gesture,
-    isScrollReady
+    isScrollReady,
+
+    /** collapse sheet to closed position */
+    collapse,
   };
 }

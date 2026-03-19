@@ -4,12 +4,13 @@ import { GestureDetector, ScrollView } from 'react-native-gesture-handler';
 import { BOTTOM_SHEET_HEIGHT, useBottomSheet } from '../../hook/useBottomSheet';
 import MarketList from '../marketList/MarketList';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
 import { useSearch } from '../../context/SearchContext';
 
 type SelectedFilter = 'all' | 'near-me' | 'open-now';
 
 function BottomSheet() {
-  const { sheetY, scrollOffset, contentHeight, scrollViewHeight, maxScroll, gesture, isScrollReady } =
+  const { sheetY, scrollOffset, contentHeight, scrollViewHeight, maxScroll, gesture, isScrollReady, collapse } =
     useBottomSheet();
   const { loading } = useSearch();
 
@@ -28,6 +29,14 @@ function BottomSheet() {
       hardResetListScroll();
     }
   }, [loading, hardResetListScroll]);
+
+  useFocusEffect(
+    useCallback(() => {
+      return () => {
+        collapse();
+      };
+    }, [collapse])
+  );
 
   // 애니메이션 스타일
   const animatedStyle = useAnimatedStyle(() => ({

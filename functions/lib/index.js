@@ -1,118 +1,292 @@
 "use strict";
-/**
- * Cloud Functions for Market Reaction Cycle Reset
- *
- * This function runs on a schedule to reset reaction counts every 7 days.
- *
- * ⚠️ IMPORTANT: This function does NOT modify the Firestore document structure.
- * It only updates the values within the existing structure.
- */
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.resetReactionCycles = exports.sendMarketAlerts = void 0;
+exports.resetReactionCycles = exports.migrateExistingAlerts = exports.handleMarketAlertTask = exports.onSavedMarketWrite = void 0;
 const functions = require("firebase-functions");
 const admin = require("firebase-admin");
 const firestore_1 = require("firebase-admin/firestore");
-// Initialize Firebase Admin if not already initialized
+const tasks_1 = require("@google-cloud/tasks");
 if (admin.apps.length === 0) {
     admin.initializeApp();
 }
 const db = admin.firestore();
+const tasksClient = new tasks_1.CloudTasksClient();
+const PROJECT_ID = 'localmarketfinder-1f6d6';
+const REGION = 'us-central1';
+const QUEUE = 'market-alerts';
+const FUNCTION_URL = `https://${REGION}-${PROJECT_ID}.cloudfunctions.net/handleMarketAlertTask`;
+// Shared secret to validate Cloud Tasks → handleMarketAlertTask calls
+const TASK_SECRET = 'lmf-alert-secret-2024';
+// ─── Timezone Helpers ─────────────────────────────────────────────────────────
+function getSydneyComponents(date) {
+    var _a;
+    const fmt = new Intl.DateTimeFormat('en-US', {
+        timeZone: 'Australia/Sydney',
+        year: 'numeric',
+        month: 'numeric',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: 'numeric',
+        weekday: 'short',
+        hour12: false,
+    });
+    const parts = fmt.formatToParts(date);
+    const get = (t) => { var _a, _b; return (_b = (_a = parts.find(p => p.type === t)) === null || _a === void 0 ? void 0 : _a.value) !== null && _b !== void 0 ? _b : '0'; };
+    const dayMap = {
+        Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6,
+    };
+    return {
+        year: +get('year'),
+        month: +get('month'),
+        day: +get('day'),
+        hour: +get('hour') % 24,
+        minute: +get('minute'),
+        dayOfWeek: (_a = dayMap[get('weekday')]) !== null && _a !== void 0 ? _a : -1,
+    };
+}
 /**
- * Scheduled function to reset reaction cycles every 7 days
- *
- * Trigger: Runs periodically (configure in Firebase Console)
- *
- * Logic:
- * 1. Check if now >= cycle.nextResetAt
- * 2. For each field in info document:
- *    - Copy current counts → previousCycle
- *    - Reset current counters to 0
- * 3. Update cycle timestamps
- *
- * Rules:
- * - Do NOT delete userReactions
- * - Do NOT change document shape
- * - Idempotent-safe (can run multiple times safely)
+ * Convert a Sydney local date/time to a UTC Date.
+ * Handles both AEST (UTC+10) and AEDT (UTC+11) automatically.
  */
+function sydneyToUTC(year, month, day, hour, minute) {
+    // Start with UTC+11 estimate (AEDT, Sydney's max offset)
+    let utc = new Date(Date.UTC(year, month - 1, day, hour - 11, minute, 0, 0));
+    // Verify actual Sydney hour; adjust 1 h if DST offset differs
+    const check = getSydneyComponents(utc);
+    if (check.hour !== hour) {
+        utc = new Date(utc.getTime() + (hour - check.hour) * 3600000);
+    }
+    return utc;
+}
 /**
- * 마켓 알림 스케줄러
- *
- * 매분 실행 → 유저가 설정한 시각(HH:mm)과 정확히 일치하면 푸시 발송
- * 시간대: Australia/Sydney
+ * Given a user's notification settings, compute the next UTC datetime
+ * at which a notification should fire (within the next 14 days).
  */
-exports.sendMarketAlerts = functions.pubsub
-    .schedule('every 1 minutes')
-    .timeZone('Australia/Sydney')
-    .onRun(async () => {
-    var _a, _b, _c, _d;
+function computeNextAlertUTC(settings) {
+    const { notifyOpenDays, notifyLeadDays, notifyTimeOfDay } = settings;
+    if (!(notifyOpenDays === null || notifyOpenDays === void 0 ? void 0 : notifyOpenDays.length) || !notifyTimeOfDay)
+        return null;
+    const [targetHH, targetMM] = notifyTimeOfDay.split(':').map(Number);
+    if (isNaN(targetHH) || isNaN(targetMM))
+        return null;
     const now = new Date();
-    // Sydney 현재 시각 → HH:mm 형식
-    const sydneyDate = new Date(now.toLocaleString('en-US', { timeZone: 'Australia/Sydney' }));
-    const hh = String(sydneyDate.getHours()).padStart(2, '0');
-    const mm = String(sydneyDate.getMinutes()).padStart(2, '0');
-    const currentTime = `${hh}:${mm}`;
-    // Sydney 기준 오늘 요일 (0=Sun ~ 6=Sat)
-    const todayDay = sydneyDate.getDay();
-    console.log(`[Alert] Sydney time: ${currentTime}, day: ${todayDay}`);
-    // notifyEnabled=true이고 설정 시각이 지금인 항목만 조회
-    let snap;
-    try {
-        snap = await db
-            .collectionGroup('savedMarkets')
-            .where('notifyEnabled', '==', true)
-            .where('notifyTimeOfDay', '==', currentTime)
-            .get();
-    }
-    catch (err) {
-        console.error('[Alert] Query failed (index missing?):', err);
-        return null;
-    }
-    if (snap.empty) {
-        console.log(`[Alert] No matches for time: ${currentTime}`);
-        return null;
-    }
-    for (const docSnap of snap.docs) {
-        try {
-            const data = docSnap.data();
-            const rawOpenDays = data.notifyOpenDays;
-            const openDays = Array.isArray(rawOpenDays) ? rawOpenDays : [];
-            const leadDays = (_a = data.notifyLeadDays) !== null && _a !== void 0 ? _a : 1;
-            // (오늘 + leadDays) 요일이 마켓 오픈 요일인지 확인
-            const targetDay = (todayDay + leadDays) % 7;
-            console.log(`[Alert] doc: ${docSnap.ref.path}, openDays: ${JSON.stringify(rawOpenDays)}, leadDays: ${leadDays}, targetDay: ${targetDay}, todayDay: ${todayDay}`);
-            if (!openDays.includes(targetDay)) {
-                console.log(`[Alert] Skipped — targetDay ${targetDay} not in openDays ${JSON.stringify(openDays)}`);
-                continue;
-            }
-            const uid = (_b = docSnap.ref.parent.parent) === null || _b === void 0 ? void 0 : _b.id;
-            const placeId = docSnap.id;
-            if (!uid)
-                continue;
-            const marketSnap = await db.collection('markets').doc(placeId).get();
-            const marketName = (_d = (_c = marketSnap.data()) === null || _c === void 0 ? void 0 : _c.name) !== null && _d !== void 0 ? _d : 'A local market';
-            const tokensSnap = await db.collection('users').doc(uid).collection('fcmTokens').get();
-            if (tokensSnap.empty)
-                continue;
-            const alertDayText = leadDays === 0 ? 'today' : leadDays === 1 ? 'tomorrow' : `in ${leadDays} days`;
-            for (const tokenDoc of tokensSnap.docs) {
-                await admin.messaging().send({
-                    token: tokenDoc.data().token,
-                    notification: {
-                        title: '📍 Upcoming Market',
-                        body: `${marketName} opens ${alertDayText}!`,
-                    },
-                    apns: {
-                        payload: { aps: { sound: 'default' } },
-                    },
-                });
-            }
-        }
-        catch (err) {
-            console.error('[Alert] Error:', docSnap.ref.path, err);
-        }
+    for (let dayOffset = 0; dayOffset <= 14; dayOffset++) {
+        const probe = getSydneyComponents(new Date(now.getTime() + dayOffset * 86400000));
+        const candidateUTC = sydneyToUTC(probe.year, probe.month, probe.day, targetHH, targetMM);
+        // Skip if already in the past (allow 30-second buffer)
+        if (candidateUTC.getTime() <= now.getTime() + 30000)
+            continue;
+        // Notification fires on day D; market opens on (D + leadDays) % 7
+        const c = getSydneyComponents(candidateUTC);
+        const targetOpenDay = (c.dayOfWeek + notifyLeadDays) % 7;
+        if (!notifyOpenDays.includes(targetOpenDay))
+            continue;
+        return candidateUTC;
     }
     return null;
+}
+// ─── Cloud Tasks Helpers ──────────────────────────────────────────────────────
+const queuePath = `projects/${PROJECT_ID}/locations/${REGION}/queues/${QUEUE}`;
+async function createAlertTask(uid, placeId, scheduleTime) {
+    var _a;
+    const payload = JSON.stringify({ uid, placeId, secret: TASK_SECRET });
+    const [task] = await tasksClient.createTask({
+        parent: queuePath,
+        task: {
+            httpRequest: {
+                httpMethod: 'POST',
+                url: FUNCTION_URL,
+                headers: { 'Content-Type': 'application/json' },
+                body: Buffer.from(payload).toString('base64'),
+            },
+            scheduleTime: {
+                seconds: Math.floor(scheduleTime.getTime() / 1000),
+            },
+        },
+    });
+    return (_a = task.name) !== null && _a !== void 0 ? _a : '';
+}
+async function deleteTask(taskName) {
+    try {
+        await tasksClient.deleteTask({ name: taskName });
+    }
+    catch (_a) {
+        // Task already executed or deleted — safe to ignore
+    }
+}
+// ─── Trigger: Schedule / Cancel Task When Settings Change ────────────────────
+/**
+ * Fires whenever a savedMarket document is created, updated, or deleted.
+ * - Cancels the old pending task (if any).
+ * - If notifications are enabled, schedules a new task for the next alert time.
+ */
+const NOTIFY_FIELDS = ['notifyEnabled', 'notifyOpenDays', 'notifyLeadDays', 'notifyTimeOfDay'];
+exports.onSavedMarketWrite = functions.firestore
+    .document('users/{uid}/savedMarkets/{placeId}')
+    .onWrite(async (change, context) => {
+    var _a, _b, _c;
+    const { uid, placeId } = context.params;
+    const oldData = change.before.exists ? change.before.data() : null;
+    const newData = change.after.exists ? change.after.data() : null;
+    // alertTaskName 업데이트만 있는 경우 → 무한루프 방지, 스킵
+    const hasRelevantChange = NOTIFY_FIELDS.some(f => JSON.stringify(oldData === null || oldData === void 0 ? void 0 : oldData[f]) !== JSON.stringify(newData === null || newData === void 0 ? void 0 : newData[f]));
+    if (!hasRelevantChange && change.before.exists && change.after.exists) {
+        return null;
+    }
+    // Cancel the previously scheduled task
+    if (oldData === null || oldData === void 0 ? void 0 : oldData.alertTaskName) {
+        await deleteTask(oldData.alertTaskName);
+    }
+    // Document deleted or notifications turned off → nothing to schedule
+    if (!newData || !newData.notifyEnabled) {
+        if (change.after.exists) {
+            await change.after.ref.update({
+                alertTaskName: admin.firestore.FieldValue.delete(),
+            });
+        }
+        return null;
+    }
+    const nextAlertUTC = computeNextAlertUTC({
+        notifyOpenDays: (_a = newData.notifyOpenDays) !== null && _a !== void 0 ? _a : [],
+        notifyLeadDays: (_b = newData.notifyLeadDays) !== null && _b !== void 0 ? _b : 1,
+        notifyTimeOfDay: (_c = newData.notifyTimeOfDay) !== null && _c !== void 0 ? _c : '20:00',
+    });
+    if (!nextAlertUTC) {
+        console.log(`[Schedule] No upcoming alert for ${uid}/${placeId}`);
+        return null;
+    }
+    const taskName = await createAlertTask(uid, placeId, nextAlertUTC);
+    await change.after.ref.update({ alertTaskName: taskName });
+    console.log(`[Schedule] Next alert for ${uid}/${placeId}: ${nextAlertUTC.toISOString()}`);
+    return null;
 });
+// ─── HTTP: Handle a Fired Alert Task ─────────────────────────────────────────
+/**
+ * Called by Cloud Tasks at the exact scheduled time.
+ * Sends the FCM push notification, then schedules the next occurrence.
+ */
+exports.handleMarketAlertTask = functions.https.onRequest(async (req, res) => {
+    var _a, _b, _c, _d, _e, _f;
+    if (req.method !== 'POST') {
+        res.status(405).send('Method Not Allowed');
+        return;
+    }
+    const { uid, placeId, secret } = req.body;
+    if (secret !== TASK_SECRET) {
+        res.status(403).send('Forbidden');
+        return;
+    }
+    if (!uid || !placeId) {
+        res.status(400).send('Missing uid or placeId');
+        return;
+    }
+    const docRef = db
+        .collection('users')
+        .doc(uid)
+        .collection('savedMarkets')
+        .doc(placeId);
+    const docSnap = await docRef.get();
+    if (!docSnap.exists) {
+        res.status(200).send('Document not found');
+        return;
+    }
+    const data = docSnap.data();
+    if (!data.notifyEnabled) {
+        await docRef.update({
+            alertTaskName: admin.firestore.FieldValue.delete(),
+        });
+        res.status(200).send('Notifications disabled');
+        return;
+    }
+    // ── Send FCM push notification ──────────────────────────────────────────
+    const marketSnap = await db.collection('markets').doc(placeId).get();
+    const marketName = (_b = (_a = marketSnap.data()) === null || _a === void 0 ? void 0 : _a.name) !== null && _b !== void 0 ? _b : 'A local market';
+    const leadDays = (_c = data.notifyLeadDays) !== null && _c !== void 0 ? _c : 1;
+    const alertDayText = leadDays === 0 ? 'today' :
+        leadDays === 1 ? 'tomorrow' :
+            `in ${leadDays} days`;
+    const tokensSnap = await db
+        .collection('users')
+        .doc(uid)
+        .collection('fcmTokens')
+        .get();
+    await Promise.all(tokensSnap.docs.map(tokenDoc => admin.messaging().send({
+        token: tokenDoc.data().token,
+        notification: {
+            title: '( . ̫ .)💗 Upcoming Market',
+            body: `${marketName} opens ${alertDayText}!`,
+        },
+        apns: { payload: { aps: { sound: 'default' } } },
+    }).catch(err => console.error('[Alert] FCM send error:', err))));
+    console.log(`[Alert] Notification sent for ${uid}/${placeId}`);
+    // ── Schedule the next occurrence ───────────────────────────────────────
+    const nextAlertUTC = computeNextAlertUTC({
+        notifyOpenDays: (_d = data.notifyOpenDays) !== null && _d !== void 0 ? _d : [],
+        notifyLeadDays: (_e = data.notifyLeadDays) !== null && _e !== void 0 ? _e : 1,
+        notifyTimeOfDay: (_f = data.notifyTimeOfDay) !== null && _f !== void 0 ? _f : '20:00',
+    });
+    if (nextAlertUTC) {
+        const taskName = await createAlertTask(uid, placeId, nextAlertUTC);
+        await docRef.update({ alertTaskName: taskName });
+        console.log(`[Alert] Next scheduled: ${nextAlertUTC.toISOString()}`);
+    }
+    else {
+        await docRef.update({
+            alertTaskName: admin.firestore.FieldValue.delete(),
+        });
+        console.log(`[Alert] No next occurrence for ${uid}/${placeId}`);
+    }
+    res.status(200).send('ok');
+});
+// ─── One-time Migration: Backfill Tasks for Existing Users ───────────────────
+/**
+ * Call this ONCE after deployment to schedule tasks for users who already
+ * have notifyEnabled=true (existing data before Cloud Tasks migration).
+ *
+ * Invoke: GET https://{region}-{project}.cloudfunctions.net/migrateExistingAlerts?secret=lmf-alert-secret-2024
+ */
+exports.migrateExistingAlerts = functions.https.onRequest(async (req, res) => {
+    var _a, _b, _c;
+    if (req.query['secret'] !== TASK_SECRET) {
+        res.status(403).send('Forbidden');
+        return;
+    }
+    let scheduled = 0;
+    let skipped = 0;
+    // collectionGroup 단일 필드 쿼리는 자동 인덱스 미적용 → users 순회 방식 사용
+    const usersSnap = await db.collection('users').get();
+    for (const userDoc of usersSnap.docs) {
+        const uid = userDoc.id;
+        const savedMarketsSnap = await db
+            .collection('users')
+            .doc(uid)
+            .collection('savedMarkets')
+            .where('notifyEnabled', '==', true)
+            .get();
+        for (const doc of savedMarketsSnap.docs) {
+            const data = doc.data();
+            // Already has a task — skip
+            if (data.alertTaskName) {
+                skipped++;
+                continue;
+            }
+            const nextAlertUTC = computeNextAlertUTC({
+                notifyOpenDays: (_a = data.notifyOpenDays) !== null && _a !== void 0 ? _a : [],
+                notifyLeadDays: (_b = data.notifyLeadDays) !== null && _b !== void 0 ? _b : 1,
+                notifyTimeOfDay: (_c = data.notifyTimeOfDay) !== null && _c !== void 0 ? _c : '20:00',
+            });
+            if (!nextAlertUTC) {
+                skipped++;
+                continue;
+            }
+            const taskName = await createAlertTask(uid, doc.id, nextAlertUTC);
+            await doc.ref.update({ alertTaskName: taskName });
+            scheduled++;
+        }
+    }
+    console.log(`[Migrate] scheduled=${scheduled} skipped=${skipped}`);
+    res.status(200).json({ scheduled, skipped });
+});
+// ─── Existing: Reaction Cycle Reset (unchanged) ───────────────────────────────
 exports.resetReactionCycles = functions.pubsub
     .schedule('every 24 hours')
     .timeZone('UTC')
@@ -122,7 +296,6 @@ exports.resetReactionCycles = functions.pubsub
     try {
         const now = firestore_1.Timestamp.now();
         const nowMillis = now.toMillis();
-        // Get all markets
         const marketsSnapshot = await db.collection('markets').get();
         if (marketsSnapshot.empty) {
             console.log('ℹ️ No markets found');
@@ -130,7 +303,6 @@ exports.resetReactionCycles = functions.pubsub
         }
         let resetCount = 0;
         let skippedCount = 0;
-        // Process each market
         for (const marketDoc of marketsSnapshot.docs) {
             const placeId = marketDoc.id;
             const infoRef = db
@@ -140,21 +312,17 @@ exports.resetReactionCycles = functions.pubsub
                 .doc('info');
             const infoDoc = await infoRef.get();
             if (!infoDoc.exists) {
-                console.log(`⏭️ Skipping ${placeId}: info document does not exist`);
                 skippedCount++;
                 continue;
             }
             const infoData = infoDoc.data();
             if (!infoData) {
-                console.log(`⏭️ Skipping ${placeId}: info data is empty`);
                 skippedCount++;
                 continue;
             }
-            // Check cycle metadata
             const cycle = infoData.cycle || {};
             const nextResetAt = cycle.nextResetAt;
             if (!nextResetAt) {
-                console.log(`🆕 Initializing cycle for ${placeId} (no nextResetAt found)`);
                 await infoRef.update({
                     'cycle.lastResetAt': now,
                     'cycle.nextResetAt': firestore_1.Timestamp.fromMillis(nowMillis + 7 * 24 * 60 * 60 * 1000),
@@ -165,16 +333,11 @@ exports.resetReactionCycles = functions.pubsub
             const nextResetMillis = nextResetAt.toMillis
                 ? nextResetAt.toMillis()
                 : nextResetAt._seconds * 1000;
-            // Check if reset is needed
             if (nowMillis < nextResetMillis) {
-                console.log(`⏭️ Skipping ${placeId}: reset not due yet (next: ${new Date(nextResetMillis).toISOString()})`);
                 skippedCount++;
                 continue;
             }
-            // Perform reset
-            console.log(`🔄 Resetting cycle for ${placeId}...`);
             const updateData = {};
-            // List of all reaction fields
             const reactionFields = [
                 'parking',
                 'petFriendly',
@@ -184,75 +347,52 @@ exports.resetReactionCycles = functions.pubsub
                 'accessibility',
             ];
             let hasChanges = false;
-            // Process each field
             for (const fieldName of reactionFields) {
                 const fieldData = infoData[fieldName];
                 if (!fieldData)
                     continue;
-                // Special handling for parking field (Free, Paid, Street)
                 if (fieldName === 'parking') {
                     const freeCount = (_a = fieldData.Free) !== null && _a !== void 0 ? _a : 0;
                     const paidCount = (_b = fieldData.Paid) !== null && _b !== void 0 ? _b : 0;
                     const streetCount = (_c = fieldData.Street) !== null && _c !== void 0 ? _c : 0;
-                    const total = freeCount + paidCount + streetCount;
-                    // Check if all counts are already 0
-                    if (total === 0) {
-                        console.log(`  ⏭️ Field ${fieldName}: already zero, skipping update`);
+                    if (freeCount + paidCount + streetCount === 0)
                         continue;
-                    }
                     hasChanges = true;
-                    // Copy current counts to previousCycle
-                    const previousCyclePath = `previousCycle.${fieldName}`;
-                    updateData[previousCyclePath] = {
+                    updateData[`previousCycle.${fieldName}`] = {
                         Free: freeCount,
                         Paid: paidCount,
                         Street: streetCount,
                     };
-                    // Reset current counts to 0
                     updateData[`${fieldName}.Free`] = 0;
                     updateData[`${fieldName}.Paid`] = 0;
                     updateData[`${fieldName}.Street`] = 0;
-                    console.log(`  ✅ Field ${fieldName}: Free=${freeCount}, Paid=${paidCount}, Street=${streetCount} → previousCycle`);
                 }
                 else {
-                    // Other fields: Handle both formats: {Yes, No} and {yes, no}
                     const yesCount = (_e = (_d = fieldData.Yes) !== null && _d !== void 0 ? _d : fieldData.yes) !== null && _e !== void 0 ? _e : 0;
                     const noCount = (_g = (_f = fieldData.No) !== null && _f !== void 0 ? _f : fieldData.no) !== null && _g !== void 0 ? _g : 0;
-                    // Check if all counts are already 0
-                    if (yesCount === 0 && noCount === 0) {
-                        console.log(`  ⏭️ Field ${fieldName}: already zero, skipping update`);
+                    if (yesCount === 0 && noCount === 0)
                         continue;
-                    }
                     hasChanges = true;
-                    // Copy current counts to previousCycle
-                    const previousCyclePath = `previousCycle.${fieldName}`;
-                    updateData[previousCyclePath] = {
+                    updateData[`previousCycle.${fieldName}`] = {
                         Yes: yesCount,
                         No: noCount,
                     };
-                    // Reset current counts to 0
                     updateData[`${fieldName}.Yes`] = 0;
                     updateData[`${fieldName}.No`] = 0;
-                    console.log(`  ✅ Field ${fieldName}: ${yesCount} Yes, ${noCount} No → previousCycle`);
                 }
             }
-            // Always advance the cycle when due (even if counts are already zero)
             updateData['cycle.lastResetAt'] = now;
             updateData['cycle.nextResetAt'] = firestore_1.Timestamp.fromMillis(nowMillis + 7 * 24 * 60 * 60 * 1000);
-            updateData['lastUpdated'] = now;
+            updateData.lastUpdated = now;
             await infoRef.update(updateData);
-            // Reset per-market userReactions + user-centric index for this market
             const userReactionsRef = infoRef.collection('userReactions');
             const userReactionsSnapshot = await userReactionsRef.get();
             if (!userReactionsSnapshot.empty) {
-                // Firestore batch limit is 500; keep a safe margin.
                 let batch = db.batch();
                 let opCount = 0;
                 for (const userDoc of userReactionsSnapshot.docs) {
-                    // 1) delete markets/{placeId}/details/info/userReactions/{uid}
                     batch.delete(userDoc.ref);
                     opCount++;
-                    // 2) delete userReactions/{uid}/reactions/{placeId} (My → Reactions index)
                     const uid = userDoc.id;
                     const userIndexRef = db
                         .collection('userReactions')
@@ -267,20 +407,15 @@ exports.resetReactionCycles = functions.pubsub
                         opCount = 0;
                     }
                 }
-                if (opCount > 0) {
+                if (opCount > 0)
                     await batch.commit();
-                }
-                console.log(`  ✅ Deleted ${userReactionsSnapshot.size} per-market user reactions + cleared user indexes`);
             }
             resetCount++;
-            if (hasChanges) {
-                console.log(`  ✅ Reset counts + advanced cycle for ${placeId}`);
-            }
-            else {
-                console.log(`  ✅ Advanced cycle for ${placeId} (counts already zero)`);
-            }
+            console.log(hasChanges
+                ? `✅ Reset counts + advanced cycle for ${placeId}`
+                : `✅ Advanced cycle for ${placeId} (counts already zero)`);
         }
-        console.log(`✅ Cycle reset complete: ${resetCount} markets reset, ${skippedCount} skipped`);
+        console.log(`✅ Cycle reset complete: ${resetCount} reset, ${skippedCount} skipped`);
         return null;
     }
     catch (error) {

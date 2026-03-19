@@ -75,13 +75,15 @@ function MarketCardHeader({
             )}
           </TouchableOpacity>
 
-          <Switch
-            value={settings.enabled}
-            onValueChange={(value) => onChange({ enabled: value, openDays: settings.openDays })}
-            trackColor={{ false: '#E5E7EB', true: '#E69DB8' }}
-            thumbColor="#FFFFFF"
-            ios_backgroundColor="#E5E7EB"
-          />
+          <View style={{ width: 51, height: 31, justifyContent: 'center', alignItems: 'center' }}>
+            <Switch
+              value={settings.enabled}
+              onValueChange={(value) => onChange({ enabled: value, openDays: settings.openDays })}
+              trackColor={{ false: '#E5E7EB', true: '#E69DB8' }}
+              thumbColor="#FFFFFF"
+              ios_backgroundColor="#E5E7EB"
+            />
+          </View>
         </View>
       </View>
 

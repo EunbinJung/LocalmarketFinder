@@ -7,8 +7,10 @@ interface Props {
 
 function getWebsiteBadge(url: string) {
   const lower = url.toLowerCase();
-  if (lower.includes('instagram.com')) return { label: 'Instagram', Icon: Instagram };
-  if (lower.includes('facebook.com') || lower.includes('fb.com')) return { label: 'Facebook', Icon: Globe };
+  if (lower.includes('instagram.com'))
+    return { label: 'Instagram', Icon: Instagram };
+  if (lower.includes('facebook.com') || lower.includes('fb.com'))
+    return { label: 'Facebook', Icon: Globe };
   return { label: 'Website', Icon: Camera };
 }
 
@@ -19,18 +21,24 @@ function MarketWebsite({ website }: Props) {
   return (
     <View
       className="mb-5 pb-5 bg-white rounded-3xl p-5"
-      style={{ shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8, elevation: 2 }}
+      style={{
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.05,
+        shadowRadius: 8,
+        elevation: 2,
+      }}
     >
-      <View className="flex-row items-center gap-2 mb-1">
-        <TouchableOpacity
-          onPress={() => Linking.openURL(safeUrl)}
-          activeOpacity={0.7}
-          className="bg-secondary w-10 h-10 rounded-full justify-center items-center"
-        >
+      <TouchableOpacity
+        onPress={() => Linking.openURL(safeUrl)}
+        activeOpacity={0.7}
+        className="flex-row items-center gap-2"
+      >
+        <View className="bg-secondary w-10 h-10 rounded-full justify-center items-center">
           <Icon size={20} color="#E69DB8" />
-        </TouchableOpacity>
+        </View>
         <Text className="text-lg font-bold text-gray-800">{label}</Text>
-      </View>
+      </TouchableOpacity>
     </View>
   );
 }
