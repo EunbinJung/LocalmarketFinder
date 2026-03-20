@@ -20,70 +20,39 @@ import { db } from './firebase';
 
 export interface MarketDetailData {
   parking: {
-    Free: 0,
-    Paid: 0,
-    Street: 0,
+    Free: number,
+    Paid: number,
+    Street: number,
     lastUpdated: Timestamp,
-    previousCycle: {
-      Free: 0,
-      Paid: 0,
-      Street: 0,
-    },
+  },
   petFriendly: {
-    Yes: 0,
-    No: 0,
-    LeashRequired: 0,
+    Yes: number,
+    No: number,
     lastUpdated: Timestamp,
-    previousCycle: {
-      Yes: 0,
-      No: 0,
-      LeashRequired: 0,
-    },
   },
   reusable: {
-    Yes: 0,
-    No: 0,
+    Yes: number,
+    No: number,
     lastUpdated: Timestamp,
-    previousCycle: {
-      Yes: 0,
-      No: 0,
-    },
   },
   toilet: {
-    Yes: 0,
-    No: 0,
+    Yes: number,
+    No: number,
     lastUpdated: Timestamp,
-    previousCycle: {
-      Yes: 0,
-      No: 0,
-    },
   },
   liveMusic: {
-    Yes: 0,
-    No: 0,
+    Yes: number,
+    No: number,
     lastUpdated: Timestamp,
-    previousCycle: {
-      Yes: 0,
-      No: 0,
-    },
   },
   accessibility: {
-    Yes: 0,
-    No: 0,
+    Yes: number,
+    No: number,
     lastUpdated: Timestamp,
-    previousCycle: {
-      Yes: 0,
-      No: 0,
-    },
-  },
-  cycle: {
-    lastResetAt: Timestamp,
-    nextResetAt: Timestamp,
   },
   updatedAt: Timestamp,
   source: 'user',
   comments: Comment[];
-}
 }
 
 export interface Comment {

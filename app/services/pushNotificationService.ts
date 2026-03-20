@@ -1,10 +1,15 @@
 import messaging from '@react-native-firebase/messaging';
-import { doc, setDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { db, ensureAuthenticated } from './firebase';
+
+let cachedToken: string | null = null;
 
 async function saveTokenToFirestore(token: string): Promise<void> {
   const uid = await ensureAuthenticated();
-  await setDoc(doc(db, 'users', uid, 'fcmTokens', token), {
+  const ref = doc(db, 'users', uid, 'fcmTokens', token);
+  const snap = await getDoc(ref);
+  if (snap.exists()) return; // 이미 저장된 토큰이면 스킵
+  await setDoc(ref, {
     token,
     platform: 'ios',
     updatedAt: new Date(),
@@ -26,9 +31,9 @@ export async function registerPushNotifications(): Promise<void> {
     let attempts = 0;
     const tryGetToken = async () => {
       try {
-        await messaging().deleteToken();
         const token = await messaging().getToken();
-        if (token) {
+        if (token && token !== cachedToken) {
+          cachedToken = token;
           await saveTokenToFirestore(token);
         }
       } catch (error) {

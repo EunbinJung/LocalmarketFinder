@@ -103,6 +103,8 @@ interface SearchContextType {
   setLoading: (loading: boolean) => void;
   selectedMarket: Market | null;
   setSelectedMarket: (market: Market | null) => void;
+  focusedMarketId: string | null;
+  setFocusedMarketId: (id: string | null) => void;
   savedMarketIds: string[];
   setSavedMarketIds: (ids: string[]) => void;
   refreshSavedMarkets: () => Promise<void>;
@@ -158,6 +160,7 @@ export function SearchProvider({ children }: { children: ReactNode }) {
   };
   
   const [selectedMarket, setSelectedMarket] = useState<Market | null>(null);
+  const [focusedMarketId, setFocusedMarketId] = useState<string | null>(null);
   const [savedMarketIds, setSavedMarketIds] = useState<string[]>([]);
   const [scopeRadiusKm, setScopeRadiusKm] = useState<ScopeRadiusKm>(
     DEFAULT_SCOPE_RADIUS_KM,
@@ -242,6 +245,8 @@ export function SearchProvider({ children }: { children: ReactNode }) {
         setLoading,
         selectedMarket,
         setSelectedMarket,
+        focusedMarketId,
+        setFocusedMarketId,
         savedMarketIds,
         setSavedMarketIds,
         refreshSavedMarkets,

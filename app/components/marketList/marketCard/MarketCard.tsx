@@ -1,4 +1,5 @@
-import { Image, Text, TouchableOpacity, View } from 'react-native';
+import { Text, TouchableOpacity, View } from 'react-native';
+import FastImage from '@d11/react-native-fast-image';
 import { MessageCircle, Star } from 'lucide-react-native';
 import { Market, useSearch } from '../../../context/SearchContext';
 import { getMarketOpenStatus } from '../../../utils/marketOpenStatus';
@@ -77,10 +78,10 @@ function MarketCard({ market }: MarketCardProps) {
 
       {photoUrl ? (
         <View className="mt-3">
-          <Image
-            source={{ uri: photoUrl }}
-            className="w-full h-40 rounded-lg"
-            resizeMode="cover"
+          <FastImage
+            source={{ uri: photoUrl, priority: FastImage.priority.normal }}
+            style={{ width: '100%', height: 160, borderRadius: 8 }}
+            resizeMode={FastImage.resizeMode.cover}
           />
         </View>
       ) : (

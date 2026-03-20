@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState, useRef } from 'react';
-import { ActivityIndicator, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, StyleSheet, TouchableOpacity, View } from 'react-native';
 import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
 import Geolocation from 'react-native-geolocation-service';
+import { Locate } from 'lucide-react-native';
 import { useSearch } from '../../context/SearchContext';
 import CurrentLocationIcon from '../../assets/icons/myMarker.svg';
 import { Market } from '../../services/marketService';
@@ -16,7 +17,7 @@ interface Region {
 
 function MapContent() {
   const [region, setRegion] = useState<Region | null>(null);
-  const { selectedLocation, filteredMarkets, setMapCenter, setUserLocation } = useSearch();
+  const { selectedLocation, filteredMarkets, setMapCenter, setUserLocation, userLocation, setSelectedLocation, setFocusedMarketId } = useSearch();
   const mapRef = useRef<MapView>(null);
   const isProgrammaticMoveRef = useRef(false);
   const lastSelectedLocationRef = useRef<{ lat: number; lng: number } | null>(null);
@@ -96,6 +97,30 @@ function MapContent() {
     }
   }, [selectedLocation, setMapCenter]);
 
+  const handleReturnToMyLocation = () => {
+    if (userLocation) {
+      const loc = { latitude: userLocation.lat, longitude: userLocation.lng, latitudeDelta: 0.05, longitudeDelta: 0.05 };
+      isProgrammaticMoveRef.current = true;
+      mapRef.current?.animateToRegion(loc, 800);
+      setSelectedLocation(null);
+      setMapCenter({ lat: userLocation.lat, lng: userLocation.lng });
+      return;
+    }
+    Geolocation.getCurrentPosition(
+      pos => {
+        const { latitude, longitude } = pos.coords;
+        const loc = { latitude, longitude, latitudeDelta: 0.05, longitudeDelta: 0.05 };
+        isProgrammaticMoveRef.current = true;
+        mapRef.current?.animateToRegion(loc, 800);
+        setUserLocation({ lat: latitude, lng: longitude });
+        setSelectedLocation(null);
+        setMapCenter({ lat: latitude, lng: longitude });
+      },
+      () => {},
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 10000 }
+    );
+  };
+
   if (!region) {
     return (
       <View className="flex-1 items-center justify-center bg-tertiary">
@@ -119,6 +144,7 @@ function MapContent() {
         removeClippedSubviews={false}
         liteMode={false}
         collapsable={false}
+        onPress={() => setFocusedMarketId(null)}
         onRegionChangeComplete={newRegion => {
           if (isProgrammaticMoveRef.current) {
             isProgrammaticMoveRef.current = false;
@@ -144,6 +170,14 @@ function MapContent() {
           <MarketMarker key={market.place_id} market={market} />
         ))}
       </MapView>
+
+      <TouchableOpacity
+        onPress={handleReturnToMyLocation}
+        activeOpacity={0.85}
+        style={styles.locationButton}
+      >
+        <Locate size={20} color="#E69DB8" />
+      </TouchableOpacity>
     </View>
   );
 }
@@ -151,6 +185,22 @@ function MapContent() {
 const styles = StyleSheet.create({
   container: {
     ...StyleSheet.absoluteFillObject,
+  },
+  locationButton: {
+    position: 'absolute',
+    top: 148,
+    right: 16,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 4,
+    elevation: 4,
   },
 });
 

@@ -2,12 +2,18 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Heart } from 'lucide-react-native';
 import {
   ActivityIndicator,
+  Animated,
   KeyboardAvoidingView,
+  Modal,
   Platform,
+  Pressable,
   ScrollView,
+  StyleSheet,
   Text,
+  TouchableOpacity,
   View,
 } from 'react-native';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { doc, getDoc } from 'firebase/firestore';
 import { db, ensureAuthenticated } from '../../services/firebase';
 import { Market, useSearch } from '../../context/SearchContext';
@@ -35,6 +41,38 @@ function SavedMarketsFeed({
   const [items, setItems] = useState<FeedItem[]>([]);
   const [expandedPlaceIds, setExpandedPlaceIds] = useState<string[]>([]);
   const scrollRef = useRef<ScrollView>(null);
+
+  // Single shared time picker — one instance for the whole feed
+  const [pickerVisible, setPickerVisible] = useState(false);
+  const [pickerDate, setPickerDate] = useState(new Date());
+  const pickerCallbackRef = useRef<((t: string) => void) | null>(null);
+  const translateY = useRef(new Animated.Value(300)).current;
+  const backdropOpacity = useRef(new Animated.Value(0)).current;
+
+  const openTimePicker = useCallback((currentTime: string, onConfirm: (t: string) => void) => {
+    const [h, m] = currentTime.split(':').map(Number);
+    const d = new Date();
+    d.setHours(h ?? 0, m ?? 0, 0, 0);
+    setPickerDate(d);
+    pickerCallbackRef.current = onConfirm;
+    setPickerVisible(true);
+    Animated.parallel([
+      Animated.spring(translateY, { toValue: 0, useNativeDriver: true, damping: 20, stiffness: 200 }),
+      Animated.timing(backdropOpacity, { toValue: 1, duration: 200, useNativeDriver: true }),
+    ]).start();
+  }, [translateY, backdropOpacity]);
+
+  const closeTimePicker = useCallback((confirm: boolean) => {
+    Animated.parallel([
+      Animated.timing(translateY, { toValue: 300, duration: 220, useNativeDriver: true }),
+      Animated.timing(backdropOpacity, { toValue: 0, duration: 200, useNativeDriver: true }),
+    ]).start(() => setPickerVisible(false));
+    if (confirm && pickerCallbackRef.current) {
+      const t = `${String(pickerDate.getHours()).padStart(2, '0')}:${String(pickerDate.getMinutes()).padStart(2, '0')}`;
+      pickerCallbackRef.current(t);
+      pickerCallbackRef.current = null;
+    }
+  }, [translateY, backdropOpacity, pickerDate]);
 
   const scrollToBottom = useCallback(() => {
     requestAnimationFrame(() => {
@@ -168,12 +206,66 @@ function SavedMarketsFeed({
               onChange={partial => updateSettings(market.place_id, partial)}
               onShowSnackbar={onShowSnackbar}
               onRequestScrollToBottom={scrollToBottom}
+              onOpenTimePicker={openTimePicker}
             />
           ))}
         </View>
       </ScrollView>
+
+      {/* Singleton time picker — rendered once at feed level */}
+      <Modal visible={pickerVisible} transparent animationType="none">
+        <Animated.View style={[pickerStyles.backdrop, { opacity: backdropOpacity }]}>
+          <Pressable style={pickerStyles.backdropPress} onPress={() => closeTimePicker(false)} />
+        </Animated.View>
+        <Animated.View style={[pickerStyles.sheet, pickerStyles.sheetPadding, { transform: [{ translateY }] }]}>
+          <View style={pickerStyles.header}>
+            <TouchableOpacity onPress={() => closeTimePicker(false)}>
+              <Text style={pickerStyles.cancelText}>Cancel</Text>
+            </TouchableOpacity>
+            <Text style={pickerStyles.titleText}>Set Time</Text>
+            <TouchableOpacity onPress={() => closeTimePicker(true)}>
+              <Text style={pickerStyles.doneText}>Done</Text>
+            </TouchableOpacity>
+          </View>
+          <DateTimePicker
+            value={pickerDate}
+            mode="time"
+            display="spinner"
+            onChange={(_e, date) => { if (date) setPickerDate(date); }}
+            style={pickerStyles.picker}
+            textColor="#1F2937"
+          />
+        </Animated.View>
+      </Modal>
     </KeyboardAvoidingView>
   );
 }
+
+const pickerStyles = StyleSheet.create({
+  backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)' },
+  backdropPress: { flex: 1 },
+  sheet: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: '#fff',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+  },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingTop: 16,
+    paddingBottom: 8,
+  },
+  cancelText: { fontSize: 16, color: '#6B7280' },
+  titleText: { fontSize: 16, fontWeight: '700', color: '#1F2937' },
+  doneText: { fontSize: 16, fontWeight: '700', color: '#E69DB8' },
+  picker: { backgroundColor: '#fff' },
+  sheetPadding: { paddingBottom: Platform.select({ ios: 34, default: 16 }) },
+});
 
 export default SavedMarketsFeed;

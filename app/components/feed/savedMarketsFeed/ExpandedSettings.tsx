@@ -16,6 +16,7 @@ interface Props {
   onChange: (partial: Partial<SavedMarketNotificationSettings>) => void;
   onShowSnackbar?: (message: string, type?: SnackbarType) => void;
   onRequestScrollToBottom?: () => void;
+  onOpenTimePicker: (currentTime: string, onConfirm: (t: string) => void) => void;
 }
 
 function ExpandedSettings({
@@ -25,6 +26,7 @@ function ExpandedSettings({
   onChange,
   onShowSnackbar,
   onRequestScrollToBottom,
+  onOpenTimePicker,
 }: Props) {
   const openDayOptions = useMemo(() => getMarketOpenDays(market), [market]);
   const effectiveTimeOfDay = settings.timeOfDay || DEFAULT_ALERT_TIME;
@@ -45,6 +47,7 @@ function ExpandedSettings({
           onChange={onChange}
           onShowSnackbar={onShowSnackbar}
           onRequestScrollToBottom={onRequestScrollToBottom}
+          onOpenTimePicker={onOpenTimePicker}
         />
         <OpenDaysPicker
           openDayOptions={openDayOptions}

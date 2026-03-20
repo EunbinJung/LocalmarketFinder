@@ -10,6 +10,8 @@
     "test": "jest"
   },
   "dependencies": {
+    "@d11/react-native-fast-image": "^8.13.0",
+    "@react-native-community/datetimepicker": "^9.1.0",
     "@react-native-firebase/app": "^23.5.0",
     "@react-native-firebase/firestore": "^23.5.0",
     "@react-native-firebase/messaging": "^23.5.0",

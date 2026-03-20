@@ -4,7 +4,6 @@ import { ReactionField as ReactionFieldType } from '../../../utils/reactionStora
 import { getUserReaction } from '../../../utils/reactionStorage';
 import {
   getMarketInfo,
-  hasNewInfoWithTieHandling,
   isFieldEmpty,
   getUserReactionFromSubcollection,
   getDisplayedValue,
@@ -27,7 +26,6 @@ function ReactionField({
   const [userReaction, setUserReaction] = useState<'yes' | 'no' | 'Free' | 'Paid' | 'Street' | null>(null);
   const [showModal, setShowModal] = useState(false);
   const [marketInfo, setMarketInfo] = useState<any>(null);
-  const [hasNew, setHasNew] = useState(false);
   const [isEmpty, setIsEmpty] = useState(false);
 
   const loadUserReaction = useCallback(async () => {
@@ -43,9 +41,6 @@ function ReactionField({
     const info = await getMarketInfo(placeId);
     setMarketInfo(info);
     setIsEmpty(isFieldEmpty(fieldName, info));
-    if (info) {
-      setHasNew(hasNewInfoWithTieHandling(fieldName, info));
-    }
   }, [placeId, fieldName]);
 
   const handleReactionUpdate = useCallback(() => {
@@ -83,13 +78,6 @@ function ReactionField({
             <Text className="text-base font-bold text-gray-800">
               {label}
             </Text>
-            {hasNew && (
-              <View className="bg-secondary px-3 py-1 rounded-full">
-                <Text className="text-gray-700 text-xs font-bold">
-                  ✨ New
-                </Text>
-              </View>
-            )}
             {userReaction && (
               <View className="bg-primary px-3 py-1 rounded-full">
                 <Text className="text-white text-xs font-bold">

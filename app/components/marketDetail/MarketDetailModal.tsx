@@ -33,7 +33,7 @@ import MarketReactions from './reactions/MarketReactions';
 import CommentsSection from './comments/CommentsSection';
 
 function MarketDetailModal() {
-  const { selectedMarket, setSelectedMarket, refreshSavedMarkets } = useSearch();
+  const { selectedMarket, setSelectedMarket, setFocusedMarketId, refreshSavedMarkets } = useSearch();
   const navigation = useNavigation<any>();
   const [loading, setLoading] = useState(false);
   const [comments, setComments] = useState<Comment[]>([]);
@@ -219,15 +219,16 @@ function MarketDetailModal() {
       visible={!!selectedMarket}
       animationType="slide"
       transparent={false}
-      onRequestClose={() => setSelectedMarket(null)}
+      onRequestClose={() => { setSelectedMarket(null); setFocusedMarketId(null); }}
     >
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} className="flex-1">
         <View className="flex-1 bg-white" style={{ paddingTop: insets.top, paddingBottom: insets.bottom }}>
           <MarketDetailHeader
             onSave={handleSave}
-            onClose={() => setSelectedMarket(null)}
+            onClose={() => { setSelectedMarket(null); setFocusedMarketId(null); }}
             onAlertPress={() => {
               setSelectedMarket(null);
+              setFocusedMarketId(null);
               navigation.navigate('Feed');
             }}
             isSaved={isSaved}

@@ -7,9 +7,10 @@ import { useSearch } from '../../context/SearchContext';
 import { getMarketOpenStatus } from '../../utils/marketOpenStatus';
 
 const MarketMarker = React.memo(({ market }: { market: Market }) => {
-  const { setSelectedMarket } = useSearch();
+  const { setSelectedMarket, focusedMarketId, setFocusedMarketId } = useSearch();
   const { status } = getMarketOpenStatus(market.opening_hours?.periods);
   const isOpen = status === 'OPEN_NOW';
+  const isFocused = focusedMarketId === market.place_id;
 
   return (
     <Marker
@@ -18,8 +19,9 @@ const MarketMarker = React.memo(({ market }: { market: Market }) => {
         latitude: market.geometry!.location.lat,
         longitude: market.geometry!.location.lng,
       }}
-      pinColor="#E69DB8"
-      tracksViewChanges={false}
+      pinColor={isFocused ? '#C2185B' : '#F48FB1'}
+      tracksViewChanges={isFocused}
+      onPress={() => setFocusedMarketId(market.place_id)}
     >
       <Callout onPress={() => setSelectedMarket(market)} tooltip>
         <TouchableOpacity
@@ -27,10 +29,22 @@ const MarketMarker = React.memo(({ market }: { market: Market }) => {
           onPress={() => setSelectedMarket(market)}
           style={calloutStyles.container}
         >
-          <Text style={calloutStyles.name} numberOfLines={2}>{market.name}</Text>
+          <Text style={calloutStyles.name} numberOfLines={2}>
+            {market.name}
+          </Text>
           <View style={calloutStyles.row}>
-            <View style={[calloutStyles.dot, isOpen ? calloutStyles.dotOpen : calloutStyles.dotClosed]} />
-            <Text style={[calloutStyles.status, isOpen ? calloutStyles.statusOpen : calloutStyles.statusClosed]}>
+            <View
+              style={[
+                calloutStyles.dot,
+                isOpen ? calloutStyles.dotOpen : calloutStyles.dotClosed,
+              ]}
+            />
+            <Text
+              style={[
+                calloutStyles.status,
+                isOpen ? calloutStyles.statusOpen : calloutStyles.statusClosed,
+              ]}
+            >
               {isOpen ? 'Open now' : 'Closed'}
             </Text>
             {market.rating ? (

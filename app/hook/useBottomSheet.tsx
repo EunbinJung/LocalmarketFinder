@@ -1,4 +1,5 @@
 
+import { useCallback } from 'react';
 import { Dimensions } from 'react-native';
 import { Gesture } from 'react-native-gesture-handler';
 import { useSharedValue, withSpring } from 'react-native-reanimated';
@@ -48,7 +49,6 @@ export function useBottomSheet() {
 
   const gesture = Gesture.Pan()
     .onStart(() => {
-      console.log("GESTURE_START");
       gestureStartSheetY.value = sheetY.value;
       isDraggingSheet.value = true;
     })
@@ -60,17 +60,6 @@ export function useBottomSheet() {
       const draggingUp = e.translationY < 0;
 
       const atTop = scrollOffset.value <= 5;
-      const atBottom = scrollOffset.value >= maxScroll.value -5;
-
-      console.log("GESTURE_CHECK", {
-        scrollOffset: scrollOffset.value,
-        maxScroll: maxScroll.value,
-        atTop,
-        atBottom,
-        draggingUp,
-        draggingDown,
-        sheetY: sheetY.value,
-      });
 
       /**
        * Ownership rules
@@ -80,11 +69,9 @@ export function useBottomSheet() {
        * 3. If at bottom & dragging up → list continues scroll
        */
 
-      // 개선 (누가 sheet를 잡을지 명확히)
       const canDragSheet =
-      (atTop && draggingDown) ||        // list top에서 아래로 drag → sheet
-      (sheetY.value > SNAP_POINTS.FULL && draggingUp); // sheet가 FULL보다 위에서 drag up → sheet
-      console.log("CAN_DRAG_SHEET:", canDragSheet);
+      (atTop && draggingDown) ||
+      (sheetY.value > SNAP_POINTS.FULL && draggingUp);
       if (!canDragSheet) return;
 
       const nextY = gestureStartSheetY.value + e.translationY;
@@ -132,14 +119,12 @@ export function useBottomSheet() {
       });
     });
 
-    console.log("SHEET_Y:", sheetY.value);
-
-  const collapse = () => {
+  const collapse = useCallback(() => {
     sheetY.value = withSpring(SNAP_POINTS.CLOSED, {
       damping: 40,
       stiffness: 180,
     });
-  };
+  }, [sheetY]);
 
   return {
     sheetY,

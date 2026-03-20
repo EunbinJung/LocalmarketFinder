@@ -22,72 +22,9 @@ export interface MarketInfoData {
   toilet?: ReactionCounts;
   liveMusic?: ReactionCounts;
   accessibility?: ReactionCounts;
-  previousCycle?: {
-    parking?: ReactionCounts;
-    petFriendly?: ReactionCounts;
-    reusable?: ReactionCounts;
-    toilet?: ReactionCounts;
-    liveMusic?: ReactionCounts;
-    accessibility?: ReactionCounts;
-  };
-  cycleResetAt?: Timestamp;
-  lastResetAt?: Timestamp;
   lastUpdated?: Timestamp;
 }
 
-export async function updateReactionInFirestore(
-  placeId: string,
-  fieldName: ReactionField,
-  reaction: ReactionValue,
-  previousReaction: ReactionValue | null,
-): Promise<void> {
-  try {
-    const infoRef = doc(db, 'markets', placeId, 'details', 'info');
-
-    // updateDoc fails if the doc doesn't exist, and nested field updates can conflict.
-    // Compute next counts and write with setDoc(merge).
-    const infoDoc = await getDoc(infoRef);
-    const currentData = infoDoc.exists() ? (infoDoc.data() as any) : {};
-    const currentCounts = (currentData?.[fieldName] as any) || {};
-
-    const currentYes =
-      typeof currentCounts?.yes === 'number'
-        ? currentCounts.yes
-        : typeof currentCounts?.Yes === 'number'
-          ? currentCounts.Yes
-          : 0;
-    const currentNo =
-      typeof currentCounts?.no === 'number'
-        ? currentCounts.no
-        : typeof currentCounts?.No === 'number'
-          ? currentCounts.No
-          : 0;
-
-    let nextYes = currentYes;
-    let nextNo = currentNo;
-
-    if (previousReaction === 'yes') nextYes = Math.max(0, nextYes - 1);
-    if (previousReaction === 'no') nextNo = Math.max(0, nextNo - 1);
-
-    if (reaction === 'yes') nextYes += 1;
-    if (reaction === 'no') nextNo += 1;
-
-    await setDoc(
-      infoRef,
-      {
-        lastUpdated: Timestamp.now(),
-        [fieldName]: {
-          yes: nextYes,
-          no: nextNo,
-        },
-      },
-      { merge: true },
-    );
-  } catch (error) {
-    console.error('Error updating reaction in Firestore:', error);
-    throw error;
-  }
-}
 
 /**
  * 🆕 NEW: Get user reaction from userReactions subcollection
@@ -345,287 +282,58 @@ export async function getMarketInfo(
 }
 
 /**
- * Check if field has new info (current count differs from previous cycle)
- * ⚠️ KEEP EXISTING FUNCTION - DO NOT MODIFY
- * This function is still used by existing code
- */
-export function hasNewInfo(
-  fieldName: ReactionField,
-  marketInfo: MarketInfoData | null,
-): boolean {
-  if (!marketInfo) return false;
-
-  const currentCounts = marketInfo[fieldName];
-  const previousCounts = marketInfo.previousCycle?.[fieldName];
-
-  if (!currentCounts) return false;
-  if (!previousCounts) {
-    // If there's current data but no previous, it's new
-    return currentCounts.yes > 0 || currentCounts.no > 0;
-  }
-
-  // Compare current with previous
-  return (
-    currentCounts.yes !== previousCounts.yes ||
-    currentCounts.no !== previousCounts.no
-  );
-}
-
-/**
- * 🆕 NEW: Get displayed value for a field using tie handling logic
- * 
- * Decision rules:
- * - If total === 0 → use previousCycle
- * - If Yes > No → display Yes
- * - If No > Yes → display No
- * - If tie → use previousCycle
- * 
- * Special handling for parking field: returns 'Free', 'Paid', or 'Street' (highest count)
- * Other fields: returns 'Yes' | 'No' | null
+ * Get displayed value for a field — returns the winning option by cumulative count.
+ * Parking: 'Free' | 'Paid' | 'Street' (highest count), or null if tied/empty.
+ * Others: 'Yes' | 'No' (higher count), or null if tied/empty.
  */
 export function getDisplayedValue(
   fieldName: ReactionField,
   marketInfo: MarketInfoData | null,
 ): 'Yes' | 'No' | 'Free' | 'Paid' | 'Street' | null {
   if (!marketInfo) return null;
+  const counts = marketInfo[fieldName];
+  if (!counts) return null;
 
-  const currentCounts = marketInfo[fieldName];
-  if (!currentCounts) return null;
-
-  // Special handling for parking field
   if (fieldName === 'parking') {
-    const freeCount = (currentCounts as any).Free ?? 0;
-    const paidCount = (currentCounts as any).Paid ?? 0;
-    const streetCount = (currentCounts as any).Street ?? 0;
-    const total = freeCount + paidCount + streetCount;
-
-    // If current cycle total is 0, use previous cycle
-    if (total === 0) {
-      const previousCounts = marketInfo.previousCycle?.[fieldName];
-      if (!previousCounts) return null;
-
-      const prevFree = (previousCounts as any).Free ?? 0;
-      const prevPaid = (previousCounts as any).Paid ?? 0;
-      const prevStreet = (previousCounts as any).Street ?? 0;
-      const prevTotal = prevFree + prevPaid + prevStreet;
-
-      if (prevTotal === 0) return null;
-      
-      // Find highest count in previous cycle
-      const maxPrev = Math.max(prevFree, prevPaid, prevStreet);
-      if (prevFree === maxPrev) return 'Free';
-      if (prevPaid === maxPrev) return 'Paid';
-      if (prevStreet === maxPrev) return 'Street';
-      return null;
-    }
-
-    // Current cycle has data - find highest count
-    const max = Math.max(freeCount, paidCount, streetCount);
-    if (freeCount === max) return 'Free';
-    if (paidCount === max) return 'Paid';
-    if (streetCount === max) return 'Street';
-    return null;
+    const free = (counts as any).Free ?? 0;
+    const paid = (counts as any).Paid ?? 0;
+    const street = (counts as any).Street ?? 0;
+    if (free === 0 && paid === 0 && street === 0) return null;
+    const max = Math.max(free, paid, street);
+    const winners = [free === max, paid === max, street === max].filter(Boolean).length;
+    if (winners > 1) return null; // tie
+    if (free === max) return 'Free';
+    if (paid === max) return 'Paid';
+    return 'Street';
   }
 
-  // Other fields: Yes/No format
-  // Normalize to {Yes, No} format
-  const yesCount = (currentCounts as any).Yes ?? (currentCounts as any).yes ?? 0;
-  const noCount = (currentCounts as any).No ?? (currentCounts as any).no ?? 0;
-  const total = yesCount + noCount;
-
-  // If current cycle total is 0, use previous cycle
-  if (total === 0) {
-    const previousCounts = marketInfo.previousCycle?.[fieldName];
-    if (!previousCounts) return null;
-
-    const prevYes = (previousCounts as any).Yes ?? (previousCounts as any).yes ?? 0;
-    const prevNo = (previousCounts as any).No ?? (previousCounts as any).no ?? 0;
-    const prevTotal = prevYes + prevNo;
-
-    if (prevTotal === 0) return null;
-    return prevYes > prevNo ? 'Yes' : prevNo > prevYes ? 'No' : null;
-  }
-
-  // Current cycle has data
-  if (yesCount > noCount) return 'Yes';
-  if (noCount > yesCount) return 'No';
-  
-  // Tie - use previous cycle
-  const previousCounts = marketInfo.previousCycle?.[fieldName];
-  if (!previousCounts) return null;
-
-  const prevYes = (previousCounts as any).Yes ?? (previousCounts as any).yes ?? 0;
-  const prevNo = (previousCounts as any).No ?? (previousCounts as any).no ?? 0;
-  
-  if (prevYes > prevNo) return 'Yes';
-  if (prevNo > prevYes) return 'No';
-  return null;
+  const yes = (counts as any).Yes ?? (counts as any).yes ?? 0;
+  const no = (counts as any).No ?? (counts as any).no ?? 0;
+  if (yes === no) return null;
+  return yes > no ? 'Yes' : 'No';
 }
 
 /**
- * 🆕 NEW: Check if field has new info with tie handling
- * 
- * Show NEW badge ONLY IF:
- * - Current winner exists
- * - Current winner !== previous cycle winner
- * - Current cycle total > 0
- * 
- * Special handling for parking field: compares 'Free', 'Paid', 'Street' winners
- */
-export function hasNewInfoWithTieHandling(
-  fieldName: ReactionField,
-  marketInfo: MarketInfoData | null,
-): boolean {
-  if (!marketInfo) return false;
-
-  const currentCounts = marketInfo[fieldName];
-  const previousCounts = marketInfo.previousCycle?.[fieldName];
-
-  if (!currentCounts) return false;
-
-  // Special handling for parking field
-  if (fieldName === 'parking') {
-    const freeCount = (currentCounts as any).Free ?? 0;
-    const paidCount = (currentCounts as any).Paid ?? 0;
-    const streetCount = (currentCounts as any).Street ?? 0;
-    const total = freeCount + paidCount + streetCount;
-
-    // Current cycle must have data
-    if (total === 0) return false;
-
-    // Determine current winner (highest count)
-    let currentWinner: 'Free' | 'Paid' | 'Street' | null = null;
-    const max = Math.max(freeCount, paidCount, streetCount);
-    if (freeCount === max) currentWinner = 'Free';
-    else if (paidCount === max) currentWinner = 'Paid';
-    else if (streetCount === max) currentWinner = 'Street';
-
-    // Compare with previous cycle winner
-    if (!previousCounts) {
-      // No previous cycle, but current has winner - it's new
-      return currentWinner !== null;
-    }
-
-    const prevFree = (previousCounts as any).Free ?? 0;
-    const prevPaid = (previousCounts as any).Paid ?? 0;
-    const prevStreet = (previousCounts as any).Street ?? 0;
-    const prevTotal = prevFree + prevPaid + prevStreet;
-
-    if (prevTotal === 0) {
-      // Previous cycle was empty, current has winner - it's new
-      return currentWinner !== null;
-    }
-
-    // Determine previous winner
-    let previousWinner: 'Free' | 'Paid' | 'Street' | null = null;
-    const maxPrev = Math.max(prevFree, prevPaid, prevStreet);
-    if (prevFree === maxPrev) previousWinner = 'Free';
-    else if (prevPaid === maxPrev) previousWinner = 'Paid';
-    else if (prevStreet === maxPrev) previousWinner = 'Street';
-
-    // New info if winners differ
-    return currentWinner !== previousWinner;
-  }
-
-  // Other fields: Yes/No format
-  // Normalize to {Yes, No} format
-  const yesCount = (currentCounts as any).Yes ?? (currentCounts as any).yes ?? 0;
-  const noCount = (currentCounts as any).No ?? (currentCounts as any).no ?? 0;
-  const total = yesCount + noCount;
-
-  // Current cycle must have data
-  if (total === 0) return false;
-
-  // Determine current winner
-  let currentWinner: 'Yes' | 'No' | null = null;
-  if (yesCount > noCount) {
-    currentWinner = 'Yes';
-  } else if (noCount > yesCount) {
-    currentWinner = 'No';
-  } else {
-    // Tie - use previous cycle
-    if (!previousCounts) return false;
-    const prevYes = (previousCounts as any).Yes ?? (previousCounts as any).yes ?? 0;
-    const prevNo = (previousCounts as any).No ?? (previousCounts as any).no ?? 0;
-    if (prevYes > prevNo) currentWinner = 'Yes';
-    else if (prevNo > prevYes) currentWinner = 'No';
-    else return false; // Both cycles are tied
-  }
-
-  // Compare with previous cycle winner
-  if (!previousCounts) {
-    // No previous cycle, but current has winner - it's new
-    return currentWinner !== null;
-  }
-
-  const prevYes = (previousCounts as any).Yes ?? (previousCounts as any).yes ?? 0;
-  const prevNo = (previousCounts as any).No ?? (previousCounts as any).no ?? 0;
-  const prevTotal = prevYes + prevNo;
-
-  if (prevTotal === 0) {
-    // Previous cycle was empty, current has winner - it's new
-    return currentWinner !== null;
-  }
-
-  // Determine previous winner
-  let previousWinner: 'Yes' | 'No' | null = null;
-  if (prevYes > prevNo) {
-    previousWinner = 'Yes';
-  } else if (prevNo > prevYes) {
-    previousWinner = 'No';
-  }
-
-  // New info if winners differ
-  return currentWinner !== previousWinner;
-}
-
-/**
- * 🆕 NEW: Check if field is in empty state
- * Returns true if both current and previous cycles have zero total
- * 
- * Special handling for parking field: checks Free, Paid, Street counts
+ * Returns true if the field has no votes at all.
  */
 export function isFieldEmpty(
   fieldName: ReactionField,
   marketInfo: MarketInfoData | null,
 ): boolean {
   if (!marketInfo) return true;
+  const counts = marketInfo[fieldName];
+  if (!counts) return true;
 
-  const currentCounts = marketInfo[fieldName];
-  const previousCounts = marketInfo.previousCycle?.[fieldName];
-
-  // Special handling for parking field
   if (fieldName === 'parking') {
-    const freeCount = currentCounts ? (currentCounts as any).Free ?? 0 : 0;
-    const paidCount = currentCounts ? (currentCounts as any).Paid ?? 0 : 0;
-    const streetCount = currentCounts ? (currentCounts as any).Street ?? 0 : 0;
-    const total = freeCount + paidCount + streetCount;
-
-    const prevFree = previousCounts ? (previousCounts as any).Free ?? 0 : 0;
-    const prevPaid = previousCounts ? (previousCounts as any).Paid ?? 0 : 0;
-    const prevStreet = previousCounts ? (previousCounts as any).Street ?? 0 : 0;
-    const prevTotal = prevFree + prevPaid + prevStreet;
-
-    return total === 0 && prevTotal === 0;
+    return (
+      ((counts as any).Free ?? 0) === 0 &&
+      ((counts as any).Paid ?? 0) === 0 &&
+      ((counts as any).Street ?? 0) === 0
+    );
   }
 
-  // Other fields: Yes/No format
-  // Normalize to {Yes, No} format
-  const yesCount = currentCounts
-    ? (currentCounts as any).Yes ?? (currentCounts as any).yes ?? 0
-    : 0;
-  const noCount = currentCounts
-    ? (currentCounts as any).No ?? (currentCounts as any).no ?? 0
-    : 0;
-  const total = yesCount + noCount;
-
-  const prevYes = previousCounts
-    ? (previousCounts as any).Yes ?? (previousCounts as any).yes ?? 0
-    : 0;
-  const prevNo = previousCounts
-    ? (previousCounts as any).No ?? (previousCounts as any).no ?? 0
-    : 0;
-  const prevTotal = prevYes + prevNo;
-
-  return total === 0 && prevTotal === 0;
+  return (
+    ((counts as any).Yes ?? (counts as any).yes ?? 0) === 0 &&
+    ((counts as any).No ?? (counts as any).no ?? 0) === 0
+  );
 }

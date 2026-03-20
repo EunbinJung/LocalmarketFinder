@@ -23,6 +23,7 @@ interface Props {
   onChange: (partial: Partial<SavedMarketNotificationSettings>) => void;
   onShowSnackbar?: (message: string, type?: SnackbarType) => void;
   onRequestScrollToBottom?: () => void;
+  onOpenTimePicker: (currentTime: string, onConfirm: (t: string) => void) => void;
 }
 
 function SavedMarketNotificationRow({
@@ -33,6 +34,7 @@ function SavedMarketNotificationRow({
   onChange,
   onShowSnackbar,
   onRequestScrollToBottom,
+  onOpenTimePicker,
 }: Props) {
   const effectiveTimeOfDay = settings.timeOfDay || DEFAULT_ALERT_TIME;
 
@@ -79,6 +81,7 @@ function SavedMarketNotificationRow({
           onChange={onChange}
           onShowSnackbar={onShowSnackbar}
           onRequestScrollToBottom={onRequestScrollToBottom}
+          onOpenTimePicker={onOpenTimePicker}
         />
       )}
     </View>

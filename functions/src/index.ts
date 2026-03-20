@@ -1,6 +1,5 @@
 import * as functions from 'firebase-functions';
 import * as admin from 'firebase-admin';
-import { Timestamp } from 'firebase-admin/firestore';
 import { CloudTasksClient } from '@google-cloud/tasks';
 
 if (admin.apps.length === 0) {
@@ -92,8 +91,8 @@ function computeNextAlertUTC(settings: {
       probe.year, probe.month, probe.day, targetHH, targetMM,
     );
 
-    // Skip if already in the past (allow 30-second buffer)
-    if (candidateUTC.getTime() <= now.getTime() + 30_000) continue;
+    // Skip if already in the past (allow 5-second buffer)
+    if (candidateUTC.getTime() <= now.getTime() + 5_000) continue;
 
     // Notification fires on day D; market opens on (D + leadDays) % 7
     const c = getSydneyComponents(candidateUTC);
@@ -111,12 +110,17 @@ function computeNextAlertUTC(settings: {
 const queuePath =
   `projects/${PROJECT_ID}/locations/${REGION}/queues/${QUEUE}`;
 
+function generateNonce(): string {
+  return Date.now().toString(36) + Math.random().toString(36).slice(2);
+}
+
 async function createAlertTask(
   uid: string,
   placeId: string,
   scheduleTime: Date,
+  nonce: string,
 ): Promise<string> {
-  const payload = JSON.stringify({ uid, placeId, secret: TASK_SECRET });
+  const payload = JSON.stringify({ uid, placeId, secret: TASK_SECRET, nonce });
   const [task] = await tasksClient.createTask({
     parent: queuePath,
     task: {
@@ -182,6 +186,7 @@ export const onSavedMarketWrite = functions.firestore
       return null;
     }
 
+    console.log(`[Schedule] Settings: openDays=${JSON.stringify(newData.notifyOpenDays)}, leadDays=${newData.notifyLeadDays}, timeOfDay=${newData.notifyTimeOfDay}, nowUTC=${new Date().toISOString()}`);
     const nextAlertUTC = computeNextAlertUTC({
       notifyOpenDays: newData.notifyOpenDays ?? [],
       notifyLeadDays: newData.notifyLeadDays ?? 1,
@@ -193,8 +198,9 @@ export const onSavedMarketWrite = functions.firestore
       return null;
     }
 
-    const taskName = await createAlertTask(uid, placeId, nextAlertUTC);
-    await change.after.ref.update({ alertTaskName: taskName });
+    const nonce = generateNonce();
+    const taskName = await createAlertTask(uid, placeId, nextAlertUTC, nonce);
+    await change.after.ref.update({ alertTaskName: taskName, alertNonce: nonce });
     console.log(
       `[Schedule] Next alert for ${uid}/${placeId}: ${nextAlertUTC.toISOString()}`,
     );
@@ -214,10 +220,11 @@ export const handleMarketAlertTask = functions.https.onRequest(
       return;
     }
 
-    const { uid, placeId, secret } = req.body as {
+    const { uid, placeId, secret, nonce } = req.body as {
       uid?: string;
       placeId?: string;
       secret?: string;
+      nonce?: string;
     };
 
     if (secret !== TASK_SECRET) {
@@ -242,6 +249,13 @@ export const handleMarketAlertTask = functions.https.onRequest(
     }
 
     const data = docSnap.data()!;
+
+    // Orphaned task guard: nonce must match the current scheduled task
+    if (nonce && data.alertNonce && nonce !== data.alertNonce) {
+      console.log(`[Alert] Stale task ignored for ${uid}/${placeId}`);
+      res.status(200).send('Stale task');
+      return;
+    }
 
     if (!data.notifyEnabled) {
       await docRef.update({
@@ -290,12 +304,14 @@ export const handleMarketAlertTask = functions.https.onRequest(
     });
 
     if (nextAlertUTC) {
-      const taskName = await createAlertTask(uid, placeId, nextAlertUTC);
-      await docRef.update({ alertTaskName: taskName });
+      const nextNonce = generateNonce();
+      const taskName = await createAlertTask(uid, placeId, nextAlertUTC, nextNonce);
+      await docRef.update({ alertTaskName: taskName, alertNonce: nextNonce });
       console.log(`[Alert] Next scheduled: ${nextAlertUTC.toISOString()}`);
     } else {
       await docRef.update({
         alertTaskName: admin.firestore.FieldValue.delete(),
+        alertNonce: admin.firestore.FieldValue.delete(),
       });
       console.log(`[Alert] No next occurrence for ${uid}/${placeId}`);
     }
@@ -348,8 +364,9 @@ export const migrateExistingAlerts = functions.https.onRequest(
 
         if (!nextAlertUTC) { skipped++; continue; }
 
-        const taskName = await createAlertTask(uid, doc.id, nextAlertUTC);
-        await doc.ref.update({ alertTaskName: taskName });
+        const nonce = generateNonce();
+        const taskName = await createAlertTask(uid, doc.id, nextAlertUTC, nonce);
+        await doc.ref.update({ alertTaskName: taskName, alertNonce: nonce });
         scheduled++;
       }
     }
@@ -359,170 +376,3 @@ export const migrateExistingAlerts = functions.https.onRequest(
   },
 );
 
-// ─── Existing: Reaction Cycle Reset (unchanged) ───────────────────────────────
-
-export const resetReactionCycles = functions.pubsub
-  .schedule('every 24 hours')
-  .timeZone('UTC')
-  .onRun(async _context => {
-    console.log('🔄 Starting reaction cycle reset check...');
-
-    try {
-      const now = Timestamp.now();
-      const nowMillis = now.toMillis();
-
-      const marketsSnapshot = await db.collection('markets').get();
-
-      if (marketsSnapshot.empty) {
-        console.log('ℹ️ No markets found');
-        return null;
-      }
-
-      let resetCount = 0;
-      let skippedCount = 0;
-
-      for (const marketDoc of marketsSnapshot.docs) {
-        const placeId = marketDoc.id;
-        const infoRef = db
-          .collection('markets')
-          .doc(placeId)
-          .collection('details')
-          .doc('info');
-
-        const infoDoc = await infoRef.get();
-
-        if (!infoDoc.exists) {
-          skippedCount++;
-          continue;
-        }
-
-        const infoData = infoDoc.data();
-        if (!infoData) {
-          skippedCount++;
-          continue;
-        }
-
-        const cycle = infoData.cycle || {};
-        const nextResetAt = cycle.nextResetAt;
-
-        if (!nextResetAt) {
-          await infoRef.update({
-            'cycle.lastResetAt': now,
-            'cycle.nextResetAt': Timestamp.fromMillis(
-              nowMillis + 7 * 24 * 60 * 60 * 1000,
-            ),
-          });
-          skippedCount++;
-          continue;
-        }
-
-        const nextResetMillis = nextResetAt.toMillis
-          ? nextResetAt.toMillis()
-          : nextResetAt._seconds * 1000;
-
-        if (nowMillis < nextResetMillis) {
-          skippedCount++;
-          continue;
-        }
-
-        const updateData: Record<string, unknown> = {};
-        const reactionFields = [
-          'parking',
-          'petFriendly',
-          'reusable',
-          'toilet',
-          'liveMusic',
-          'accessibility',
-        ];
-
-        let hasChanges = false;
-
-        for (const fieldName of reactionFields) {
-          const fieldData = infoData[fieldName];
-          if (!fieldData) continue;
-
-          if (fieldName === 'parking') {
-            const freeCount = fieldData.Free ?? 0;
-            const paidCount = fieldData.Paid ?? 0;
-            const streetCount = fieldData.Street ?? 0;
-            if (freeCount + paidCount + streetCount === 0) continue;
-
-            hasChanges = true;
-            updateData[`previousCycle.${fieldName}`] = {
-              Free: freeCount,
-              Paid: paidCount,
-              Street: streetCount,
-            };
-            updateData[`${fieldName}.Free`] = 0;
-            updateData[`${fieldName}.Paid`] = 0;
-            updateData[`${fieldName}.Street`] = 0;
-          } else {
-            const yesCount = fieldData.Yes ?? fieldData.yes ?? 0;
-            const noCount = fieldData.No ?? fieldData.no ?? 0;
-            if (yesCount === 0 && noCount === 0) continue;
-
-            hasChanges = true;
-            updateData[`previousCycle.${fieldName}`] = {
-              Yes: yesCount,
-              No: noCount,
-            };
-            updateData[`${fieldName}.Yes`] = 0;
-            updateData[`${fieldName}.No`] = 0;
-          }
-        }
-
-        updateData['cycle.lastResetAt'] = now;
-        updateData['cycle.nextResetAt'] = Timestamp.fromMillis(
-          nowMillis + 7 * 24 * 60 * 60 * 1000,
-        );
-        updateData.lastUpdated = now;
-
-        await infoRef.update(updateData);
-
-        const userReactionsRef = infoRef.collection('userReactions');
-        const userReactionsSnapshot = await userReactionsRef.get();
-
-        if (!userReactionsSnapshot.empty) {
-          let batch = db.batch();
-          let opCount = 0;
-
-          for (const userDoc of userReactionsSnapshot.docs) {
-            batch.delete(userDoc.ref);
-            opCount++;
-
-            const uid = userDoc.id;
-            const userIndexRef = db
-              .collection('userReactions')
-              .doc(uid)
-              .collection('reactions')
-              .doc(placeId);
-            batch.delete(userIndexRef);
-            opCount++;
-
-            if (opCount >= 450) {
-              await batch.commit();
-              batch = db.batch();
-              opCount = 0;
-            }
-          }
-
-          if (opCount > 0) await batch.commit();
-        }
-
-        resetCount++;
-        console.log(
-          hasChanges
-            ? `✅ Reset counts + advanced cycle for ${placeId}`
-            : `✅ Advanced cycle for ${placeId} (counts already zero)`,
-        );
-      }
-
-      console.log(
-        `✅ Cycle reset complete: ${resetCount} reset, ${skippedCount} skipped`,
-      );
-      return null;
-    } catch (error) {
-      console.error('❌ Error resetting reaction cycles:', error);
-      throw error;
-    }
-  });

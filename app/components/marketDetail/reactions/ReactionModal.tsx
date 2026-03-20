@@ -51,12 +51,12 @@ function ReactionModal({
     // If changing to a different reaction, show confirmation
     if (currentReaction && currentReaction !== reaction) {
       Alert.alert(
-        '리액션 변경',
-        '정말 바꾸시겠습니까?',
+        'Change Reaction',
+        'Are you sure you want to change your reaction?',
         [
-          { text: '취소', style: 'cancel' },
+          { text: 'Cancel', style: 'cancel' },
           {
-            text: '확인',
+            text: 'Confirm',
             onPress: () => setSelectedReaction(reaction),
           },
         ],
@@ -76,12 +76,12 @@ function ReactionModal({
     // If removing reaction, show confirmation
     if (currentReaction && !selectedReaction) {
       Alert.alert(
-        '리액션 제거',
-        '정말 리액션을 제거하시겠습니까?',
+        'Remove Reaction',
+        'Are you sure you want to remove your reaction?',
         [
-          { text: '취소', style: 'cancel' },
+          { text: 'Cancel', style: 'cancel' },
           {
-            text: '제거',
+            text: 'Remove',
             style: 'destructive',
             onPress: handleSave,
           },

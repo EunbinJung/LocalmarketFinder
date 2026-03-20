@@ -123,17 +123,6 @@ npm run ios
 
 ---
 
-## 📌 Notes
-
-Community reactions reset every 7 days   
-
-Designed with scalability and cost-efficiency in mind   
-
-Focused on local Australian markets   
-
-
----
-
 ## 👤 Author
 
 Eunbin Jung

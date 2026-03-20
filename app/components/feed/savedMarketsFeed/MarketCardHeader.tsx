@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
-import { Image, Switch, Text, TouchableOpacity, View } from 'react-native';
+import { Switch, Text, TouchableOpacity, View } from 'react-native';
+import FastImage from '@d11/react-native-fast-image';
 import { Bell, BellOff, Clock } from 'lucide-react-native';
 import { Market, useSearch } from '../../../context/SearchContext';
 import { SavedMarketNotificationSettings } from '../../../services/savedMarketNotificationService';
@@ -65,10 +66,10 @@ function MarketCardHeader({
             className="rounded-2xl overflow-hidden"
           >
             {photoUrl ? (
-              <Image
-                source={{ uri: photoUrl }}
-                className="w-11 h-11 rounded-2xl bg-gray-100"
-                resizeMode="cover"
+              <FastImage
+                source={{ uri: photoUrl, priority: FastImage.priority.low }}
+                style={{ width: 44, height: 44, borderRadius: 16, backgroundColor: '#F3F4F6' }}
+                resizeMode={FastImage.resizeMode.cover}
               />
             ) : (
               <View className="w-11 h-11 rounded-2xl bg-gray-100" />
